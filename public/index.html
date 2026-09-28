@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Anschluss – every train in Germany</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚆</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="panel">
+      <header class="brand">
+        <h1>Anschluss</h1>
+        <p>DB, FlixTrain, ÖBB and every regional operator, in one search.</p>
+      </header>
+
+      <form id="search" class="search" autocomplete="off">
+        <div class="stations">
+          <div class="field">
+            <label for="from">From</label>
+            <input id="from" name="from" placeholder="Station or city" required>
+            <ul class="suggest" role="listbox" hidden></ul>
+          </div>
+          <button type="button" id="swap" class="swap" aria-label="Swap start and destination" title="Swap">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M7 4v13m0 0-3-3m3 3 3-3M17 20V7m0 0-3 3m3-3 3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="field">
+            <label for="to">To</label>
+            <input id="to" name="to" placeholder="Station or city" required>
+            <ul class="suggest" role="listbox" hidden></ul>
+          </div>
+        </div>
+
+        <div class="when">
+          <div class="seg" role="radiogroup" aria-label="Time refers to">
+            <input type="radio" name="arriveBy" id="dep" value="0" checked><label for="dep">Depart</label>
+            <input type="radio" name="arriveBy" id="arr" value="1"><label for="arr">Arrive</label>
+          </div>
+          <input type="datetime-local" id="when" name="when" aria-label="Date and time">
+        </div>
+
+        <details class="options">
+          <summary>Tickets and sources</summary>
+          <div class="opt-grid">
+            <label class="check"><input type="checkbox" name="dticket"> I have a Deutschlandticket</label>
+            <label class="check"><input type="checkbox" name="dticketOnly"> Only trains the Deutschlandticket covers</label>
+            <label class="check"><input type="checkbox" name="coach"> Include long-distance buses</label>
+            <label class="check"><input type="checkbox" name="class"> First class</label>
+            <label class="inline">BahnCard
+              <select name="bahncard">
+                <option value="0">None</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
+              </select>
+            </label>
+            <fieldset class="sources">
+              <legend>Search in</legend>
+              <label class="check"><input type="checkbox" name="src" value="db" checked> Deutsche Bahn</label>
+              <label class="check"><input type="checkbox" name="src" value="transitous" checked> Transitous (all open timetables)</label>
+              <label class="check"><input type="checkbox" name="src" value="flix" checked> FlixTrain</label>
+              <label class="check"><input type="checkbox" name="src" value="oebb" checked> ÖBB</label>
+            </fieldset>
+          </div>
+        </details>
+
+        <button type="submit" class="go">Find connections</button>
+      </form>
+
+      <nav class="sorts" aria-label="Sort results" hidden>
+        <button data-sort="best" class="on">Best</button>
+        <button data-sort="fast">Fastest</button>
+        <button data-sort="cheap">Cheapest</button>
+        <button data-sort="early">Earliest</button>
+        <button data-sort="transfers">Fewest changes</button>
+      </nav>
+
+      <section id="results" class="results" aria-live="polite">
+        <div class="empty">
+          <p>Type a start and destination to compare every operator at once. Prices come from DB and Flix; the map shows the exact track wherever open data has it.</p>
+        </div>
+      </section>
+
+      <div class="paging" hidden>
+        <button id="earlier" type="button">Earlier</button>
+        <button id="later" type="button">Later</button>
+      </div>
+
+      <footer id="status" class="status"></footer>
+    </aside>
+
+    <main class="mapwrap">
+      <div id="map" aria-label="Map of the selected connection"></div>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="app.js" type="module"></script>
+</body>
+</html>
