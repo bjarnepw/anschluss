@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import '../../core/net.dart';
 import '../../models/settings.dart';
 import '../app_scope.dart';
+import '../../core/tiles/tile_cache.dart';
+import '../../offline/offline_pack.dart';
 import '../line_colors.dart';
+import '../widgets/intro.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -138,6 +141,78 @@ class SettingsScreen extends StatelessWidget {
             value: st.coach,
             onChanged: (v) => set(st.copyWith(coach: v)),
           ),
+          ListTile(
+            leading: const Icon(Icons.directions_walk),
+            title: Text(s.de ? 'Max. Fußweg zum/vom Bahnhof' : 'Max. walk to/from stations'),
+            trailing: Text('${st.maxWalkMinutes} min', style: t.titleSmall),
+            subtitle: Slider(
+              value: st.maxWalkMinutes.toDouble(),
+              min: 5,
+              max: 40,
+              divisions: 7,
+              label: '${st.maxWalkMinutes} min',
+              onChanged: (v) => set(st.copyWith(maxWalkMinutes: v.round())),
+            ),
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.hiking),
+            title: Text(s.de ? 'Komplett zu Fuß anzeigen, wenn schneller' : 'Show walking the whole way when faster'),
+            value: st.includeWalking,
+            onChanged: (v) => set(st.copyWith(includeWalking: v)),
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.alt_route),
+            title: Text(s.de ? 'Mehr Alternativen suchen' : 'Search more alternatives'),
+            subtitle: Text(
+              s.de
+                  ? 'Günstigere/langsamere DB-Verbindungen und Flix-Kombis mit Regionalzug-Zubringern (Salzwedel → RE → Hannover → FlixTrain)'
+                  : 'Cheaper/slower DB routes and Flix combos with regional feeders (Salzwedel → RE → Hannover → FlixTrain)',
+            ),
+            value: st.moreAlternatives,
+            onChanged: (v) => set(st.copyWith(moreAlternatives: v)),
+          ),
+
+          // ---------- offline ----------
+          header(s.de ? 'Offline' : 'Offline'),
+          const _OfflineSection(),
+          SwitchListTile(
+            secondary: const Icon(Icons.update),
+            title: Text(s.de ? 'Offline-Fahrplan automatisch aktualisieren' : 'Update the offline timetable automatically'),
+            subtitle: Text(
+              s.de
+                  ? 'Prüft alle 12 h, ob es einen neuen Fahrplan gibt (Baustellen, Ausfälle, Zusatzzüge), und lädt ihn dann (~12 MB).'
+                  : 'Checks every 12 h for a new timetable (construction work, cancellations, extra trains) and downloads it (~12 MB).',
+            ),
+            value: st.autoUpdateOffline,
+            onChanged: (v) => set(st.copyWith(autoUpdateOffline: v)),
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.signal_cellular_off),
+            title: Text(s.de ? 'Nur offline planen' : 'Plan offline only'),
+            subtitle: Text(
+              s.de ? 'Keine mobilen Daten – nur der heruntergeladene Fahrplan.' : 'No mobile data – only the downloaded timetable.',
+            ),
+            value: st.offlineOnly,
+            onChanged: OfflinePack.instance.available ? (v) => set(st.copyWith(offlineOnly: v)) : null,
+          ),
+          if (!kIsWeb) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: TextFormField(
+                initialValue: st.tileUrl,
+                decoration: InputDecoration(
+                  labelText: s.de ? 'Eigener Kartenserver (optional)' : 'Own map tile server (optional)',
+                  hintText: 'https://…/{z}/{x}/{y}.png',
+                  helperText: s.de
+                      ? 'Leer = OpenStreetMap. Angesehene Karten werden immer offline gespeichert; komplette Strecken vorab laden geht nur mit einem Server, der das erlaubt (z.B. mit eigenem API-Key).'
+                      : 'Empty = OpenStreetMap. Viewed map areas are always kept offline; pre-downloading whole routes needs a server that allows it (e.g. with your own API key).',
+                  helperMaxLines: 4,
+                ),
+                onChanged: (v) => set(st.copyWith(tileUrl: v.trim())),
+              ),
+            ),
+            const _TileCacheTile(),
+          ],
 
           // ---------- sources ----------
           header(s.sources),
@@ -233,6 +308,11 @@ class SettingsScreen extends StatelessWidget {
 
           // ---------- advanced ----------
           header(s.advanced),
+          ListTile(
+            leading: const Icon(Icons.help_outline),
+            title: Text(s.de ? 'Einführung erneut zeigen' : 'Show the introduction again'),
+            onTap: () => showIntro(context),
+          ),
           ListTile(leading: const Icon(Icons.delete_sweep_outlined), title: Text(s.clearHistory), onTap: store.clearRecents),
           if (kIsWeb)
             Padding(
@@ -244,6 +324,128 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _OfflineSection extends StatelessWidget {
+  const _OfflineSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.s;
+    final pack = OfflinePack.instance;
+    if (!pack.supported) {
+      return ListTile(
+        leading: const Icon(Icons.cloud_off),
+        title: Text(
+          s.de ? 'Offline-Fahrplan nur in der App (Android, iOS, Desktop).' : 'Offline timetable only in the app (Android, iOS, desktop).',
+        ),
+      );
+    }
+    return ListenableBuilder(
+      listenable: pack,
+      builder: (context, _) {
+        final info = pack.info;
+        final t = Theme.of(context).textTheme;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                s.de
+                    ? 'Alle Fern- und Regionalzüge in Deutschland inkl. S-Bahn (~12 MB). Züge fahren nach festen Mustern, daher reicht ein Download für mehrere Wochen: ohne Netz wird dann mit planmäßigen Zeiten geplant (ohne Verspätungen und Preise). Busse, Trams und U-Bahn sind nicht enthalten.'
+                    : 'All long-distance and regional trains in Germany incl. S-Bahn (~12 MB). Trains run on fixed patterns, so one download lasts several weeks: without network, trips are planned with scheduled times (no delays or prices). Buses, trams and U-Bahn are not included.',
+                style: t.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              if (info != null)
+                Text(
+                  s.de
+                      ? 'Heruntergeladen ${fmtAgo(info.downloadedAt, true)} · gültig bis ${fmtDate(info.validToDate, true)} · ${(info.bytes / 1e6).toStringAsFixed(1)} MB${pack.stale ? ' · Update empfohlen' : ''}${info.lastChecked != null ? ' · geprüft ${fmtAgo(info.lastChecked!, true)}' : ''}'
+                      : 'Downloaded ${fmtAgo(info.downloadedAt, false)} · valid until ${fmtDate(info.validToDate, false)} · ${(info.bytes / 1e6).toStringAsFixed(1)} MB${pack.stale ? ' · update recommended' : ''}${info.lastChecked != null ? ' · checked ${fmtAgo(info.lastChecked!, false)}' : ''}',
+                  style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              if (pack.error != null) Text(pack.error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              if (pack.progress != null) ...[
+                const SizedBox(height: 8),
+                LinearProgressIndicator(value: pack.progress == 0 ? null : pack.progress),
+                const SizedBox(height: 4),
+                Text(s.de ? 'Wird geladen und aufbereitet…' : 'Downloading and preparing…', style: t.bodySmall),
+              ],
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  FilledButton.tonalIcon(
+                    icon: Icon(info == null ? Icons.download : Icons.sync),
+                    label: Text(
+                      info == null ? (s.de ? 'Fahrplan herunterladen' : 'Download timetable') : (s.de ? 'Aktualisieren' : 'Update'),
+                    ),
+                    onPressed: pack.progress != null ? null : pack.download,
+                  ),
+                  if (info != null)
+                    TextButton(
+                      onPressed: pack.progress != null
+                          ? null
+                          : () async {
+                              final messenger = ScaffoldMessenger.of(context);
+                              try {
+                                final newer = await pack.updateAvailable();
+                                if (newer) {
+                                  await pack.download();
+                                } else {
+                                  messenger.showSnackBar(
+                                    SnackBar(content: Text(s.de ? 'Fahrplan ist aktuell.' : 'Timetable is up to date.')),
+                                  );
+                                }
+                              } catch (_) {
+                                messenger.showSnackBar(SnackBar(content: Text(s.de ? 'Keine Verbindung.' : 'No connection.')));
+                              }
+                            },
+                      child: Text(s.de ? 'Nach Updates suchen' : 'Check for updates'),
+                    ),
+                  if (info != null)
+                    TextButton(onPressed: pack.progress != null ? null : pack.delete, child: Text(s.de ? 'Löschen' : 'Delete')),
+                ],
+              ),
+              Text(
+                s.de ? 'Daten: gtfs.de / DELFI e.V., CC BY 4.0' : 'Data: gtfs.de / DELFI e.V., CC BY 4.0',
+                style: t.labelSmall?.copyWith(color: Theme.of(context).colorScheme.outline),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _TileCacheTile extends StatefulWidget {
+  const _TileCacheTile();
+
+  @override
+  State<_TileCacheTile> createState() => _TileCacheTileState();
+}
+
+class _TileCacheTileState extends State<_TileCacheTile> {
+  late Future<int> _size = tileCacheBytes();
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.s;
+    return FutureBuilder<int>(
+      future: _size,
+      builder: (context, snap) => ListTile(
+        leading: const Icon(Icons.layers_clear_outlined),
+        title: Text(s.de ? 'Gespeicherte Karten löschen' : 'Delete saved map tiles'),
+        subtitle: Text('${((snap.data ?? 0) / 1e6).toStringAsFixed(1)} MB'),
+        onTap: () async {
+          await clearTileCache();
+          if (mounted) setState(() => _size = tileCacheBytes());
+        },
       ),
     );
   }

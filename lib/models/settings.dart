@@ -52,6 +52,15 @@ class Settings {
   /// which the OpenStreetMap servers do not allow.
   final String tileUrl;
 
+  /// Plan only with the downloaded offline timetable (no mobile data).
+  final bool offlineOnly;
+
+  /// The map intro was shown.
+  final bool seenIntro;
+
+  /// Check for a newer offline timetable regularly and download it automatically.
+  final bool autoUpdateOffline;
+
   const Settings({
     this.minTransferMinutes = 0,
     this.hideTightTransfers = false,
@@ -73,6 +82,9 @@ class Settings {
     this.includeWalking = true,
     this.moreAlternatives = true,
     this.tileUrl = '',
+    this.offlineOnly = false,
+    this.seenIntro = false,
+    this.autoUpdateOffline = true,
   });
 
   Settings copyWith({
@@ -96,6 +108,9 @@ class Settings {
     bool? includeWalking,
     bool? moreAlternatives,
     String? tileUrl,
+    bool? offlineOnly,
+    bool? seenIntro,
+    bool? autoUpdateOffline,
   }) => Settings(
     minTransferMinutes: minTransferMinutes ?? this.minTransferMinutes,
     hideTightTransfers: hideTightTransfers ?? this.hideTightTransfers,
@@ -117,6 +132,9 @@ class Settings {
     includeWalking: includeWalking ?? this.includeWalking,
     moreAlternatives: moreAlternatives ?? this.moreAlternatives,
     tileUrl: tileUrl ?? this.tileUrl,
+    offlineOnly: offlineOnly ?? this.offlineOnly,
+    seenIntro: seenIntro ?? this.seenIntro,
+    autoUpdateOffline: autoUpdateOffline ?? this.autoUpdateOffline,
   );
 
   Map<String, dynamic> toJson() => {
@@ -140,6 +158,9 @@ class Settings {
     'includeWalking': includeWalking,
     'moreAlternatives': moreAlternatives,
     'tileUrl': tileUrl,
+    'offlineOnly': offlineOnly,
+    'seenIntro': seenIntro,
+    'autoUpdateOffline': autoUpdateOffline,
   };
 
   factory Settings.fromJson(Map<String, dynamic> j) {
@@ -166,6 +187,9 @@ class Settings {
       includeWalking: pick('includeWalking', d.includeWalking),
       moreAlternatives: pick('moreAlternatives', d.moreAlternatives),
       tileUrl: pick('tileUrl', d.tileUrl),
+      offlineOnly: pick('offlineOnly', d.offlineOnly),
+      seenIntro: pick('seenIntro', d.seenIntro),
+      autoUpdateOffline: pick('autoUpdateOffline', d.autoUpdateOffline),
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'offline/offline_pack.dart';
 import 'services/store.dart';
 import 'services/trip_updates.dart';
 import 'ui/app_scope.dart';
@@ -9,6 +10,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final store = AppStore();
   await store.load();
+  await OfflinePack.instance.init();
   TripUpdater.instance = TripUpdater(store)..start();
   runApp(AnschlussApp(store: store));
 }

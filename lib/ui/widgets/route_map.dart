@@ -4,9 +4,11 @@ import 'package:latlong2/latlong.dart';
 
 import '../../core/tiles/tile_cache.dart';
 import '../../models/journey.dart';
+import '../../services/geometry.dart';
 import '../../services/location.dart';
 import '../app_scope.dart';
 import '../line_colors.dart';
+import 'intro.dart';
 
 /// OSM map with the journey's legs drawn in their line colours. Dashed = straight line (no exact geometry).
 /// [padding] is the area covered by overlays (bottom sheet, side panel, status bar); fitting keeps the route
@@ -20,7 +22,11 @@ class RouteMap extends StatefulWidget {
   final EdgeInsets padding;
   final bool rounded;
 
+  /// Called after real track geometry was loaded into [journey] (e.g. to save it with a trip).
+  final ValueChanged<Journey>? onGeometry;
+
   const RouteMap({
+    this.onGeometry,
     super.key,
     required this.journey,
     this.others = const [],
@@ -48,6 +54,18 @@ class _RouteMapState extends State<RouteMap> {
     super.initState();
     _loc.position.addListener(_onPosition);
     _loc.resumeIfAllowed();
+    _loadTrack();
+  }
+
+  /// Straight lines are only a stand-in: fetch the real route along the tracks for the shown journey.
+  void _loadTrack() {
+    final j = widget.journey;
+    if (j == null || AppScope.read(context).settings.offlineOnly) return;
+    enrichGeometry(j).then((changed) {
+      if (!changed || !mounted || widget.journey?.id != j.id) return;
+      setState(() {});
+      widget.onGeometry?.call(j);
+    });
   }
 
   @override
@@ -77,6 +95,7 @@ class _RouteMapState extends State<RouteMap> {
     super.didUpdateWidget(old);
     final pinsChanged = widget.journey == null && !_samePins(old.pins, widget.pins);
     final paddingChanged = (old.padding.bottom - widget.padding.bottom).abs() > 40 || old.padding.left != widget.padding.left;
+    if (old.journey?.id != widget.journey?.id) _loadTrack();
     final setChanged = _ids(old) != _ids(widget);
     final selectionOnly = !setChanged && old.journey?.id != widget.journey?.id;
     if (_ready && (setChanged || selectionOnly || pinsChanged || paddingChanged)) {
@@ -318,6 +337,11 @@ class _RouteMapState extends State<RouteMap> {
               icon: const Icon(Icons.train_outlined),
               selectedIcon: const Icon(Icons.train),
               onPressed: () => setState(() => _rail = !_rail),
+            ),
+            IconButton(
+              tooltip: context.s.de ? 'Legende' : 'Legend',
+              icon: const Icon(Icons.info_outline),
+              onPressed: () => showMapLegend(context),
             ),
             IconButton(
               tooltip: context.s.de ? 'Einpassen' : 'Fit',

@@ -58,7 +58,7 @@ class _StationPickerState extends State<StationPicker> {
       _error = null;
     });
     try {
-      final res = await searchLocations(q.trim());
+      final res = await searchLocations(q.trim(), offlineOnly: AppScope.read(context).settings.offlineOnly);
       if (!mounted || id != _req) return;
       setState(() => _items = res);
     } catch (e) {

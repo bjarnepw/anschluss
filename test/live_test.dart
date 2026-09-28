@@ -15,7 +15,7 @@ void main() {
       '${j.departure.toLocal()} → ${j.arrival.toLocal()} ${j.transit.map((l) => l.line).join(' / ')} '
       '${j.prices.map((p) => '${p.source}:${p.amount}').join(',')} [${j.sources.join(',')}]';
 
-  for (final id in sources.keys) {
+  for (final id in sources.keys.where((k) => k != 'offline')) {
     test('$id returns journeys in the future', () async {
       final when = DateTime.now().add(const Duration(hours: 12));
       final js = await sources[id]!.journeys(berlin, hamburg, SearchOptions(when: when));
@@ -31,7 +31,7 @@ void main() {
   test('merged search', () async {
     final when = DateTime.now().add(const Duration(hours: 12));
     SearchResult? last;
-    await for (final r in searchJourneys(berlin, hamburg, SearchOptions(when: when), sources.keys.toList())) {
+    await for (final r in searchJourneys(berlin, hamburg, SearchOptions(when: when), sources.keys.where((k) => k != 'offline').toList())) {
       last = r;
     }
     for (final j in last!.journeys) {
@@ -57,7 +57,12 @@ void main() {
     for (final to in [koeln, pasewalk]) {
       final when = DateTime.now().add(const Duration(hours: 12));
       SearchResult? last;
-      await for (final r in searchJourneys(salzwedel, to, SearchOptions(when: when, results: 8), sources.keys.toList())) {
+      await for (final r in searchJourneys(
+        salzwedel,
+        to,
+        SearchOptions(when: when, results: 8),
+        sources.keys.where((k) => k != 'offline').toList(),
+      )) {
         last = r;
       }
       // ignore: avoid_print

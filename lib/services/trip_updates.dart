@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../models/journey.dart';
+import '../offline/offline_pack.dart';
 import '../sources/source.dart';
 import '../ui/strings.dart';
 import 'merge.dart';
@@ -74,6 +75,13 @@ class TripUpdater with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _schedule();
     refreshActive();
+    _checkOffline();
+  }
+
+  /// Keep the offline timetable current (construction work, cancellations …) – cheap check, at most every 12 h.
+  void _checkOffline() {
+    if (store.settings.offlineOnly) return;
+    OfflinePack.instance.checkForUpdate(autoDownload: store.settings.autoUpdateOffline);
   }
 
   void _schedule() {
@@ -89,6 +97,7 @@ class TripUpdater with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _schedule();
       refreshActive(); // coming back to the app: get fresh data right away
+      _checkOffline();
     } else if (state == AppLifecycleState.paused) {
       _timer?.cancel();
     }
@@ -106,6 +115,7 @@ class TripUpdater with WidgetsBindingObserver {
 
   Future<TripRefreshResult> refresh(String id) async {
     final trip = store.tripById(id);
+    if (store.settings.offlineOnly) return const TripRefreshResult(RefreshOutcome.offline);
     if (trip == null || !_running.add(id)) return const TripRefreshResult(RefreshOutcome.offline);
     try {
       final s = S(store.settings.language);

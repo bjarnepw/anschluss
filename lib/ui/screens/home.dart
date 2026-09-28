@@ -19,6 +19,7 @@ import 'settings_screen.dart';
 import 'station_picker.dart';
 import 'tracking.dart';
 import '../widgets/countdown.dart';
+import '../widgets/intro.dart';
 import '../widgets/time_picker_sheet.dart';
 
 /// Map-first home: the map fills the screen, search + results live in a draggable bottom sheet
@@ -70,6 +71,22 @@ class _HomeScreenState extends State<HomeScreen> {
       _to = store.recentRoutes.first.to;
     }
   }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final store = AppScope.read(context);
+    if (!store.settings.seenIntro && !_introShown) {
+      _introShown = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        await showIntro(context);
+        store.updateSettings(store.settings.copyWith(seenIntro: true));
+      });
+    }
+  }
+
+  bool _introShown = false;
 
   @override
   void dispose() {
@@ -149,47 +166,48 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_sheet.isAttached && _sheet.size < _halfFraction) _moveSheet(_halfFraction);
     final opts = SearchOptions.from(settings, when, arriveBy: direction);
     SearchResult? last;
-    _sub = searchJourneys(from, to, opts, settings.sources, hideTight: settings.hideTightTransfers).listen(
-      (snapshot) {
-        var r = snapshot;
-        if (keep) {
-          final merged = mergeJourneys([base, r.journeys]);
-          rankJourneys(
-            merged,
-            when: _searchedWhen ?? when,
-            arriveBy: _arriveBy,
-            dticket: settings.dticket,
-            minTransfer: settings.minTransferMinutes,
-          );
-          r = SearchResult(merged, r.status, done: r.done, fetchedAt: r.fetchedAt);
-        }
-        last = r;
-        if (mounted) setState(() => _result = r);
-      },
-      onDone: () {
-        if (!mounted) return;
-        final r = last;
-        setState(() {
-          _searching = false;
-          _loadingMore = false;
-        });
-        if (r == null) return;
-        if (r.journeys.isNotEmpty) {
-          store.saveLastSearch(SavedSearch(SavedRoute(from, to), when, _arriveBy, r.journeys, r.fetchedAt));
-        } else if (r.status.values.every((x) => x.state != SourceState.ok)) {
-          // Everything failed (offline?): fall back to what we had for the same route.
-          final cached = store.lastSearch;
-          if (cached != null && cached.route.from.name == from.name && cached.route.to.name == to.name) {
+    _sub = searchJourneys(from, to, opts, settings.sources, hideTight: settings.hideTightTransfers, offlineOnly: settings.offlineOnly)
+        .listen(
+          (snapshot) {
+            var r = snapshot;
+            if (keep) {
+              final merged = mergeJourneys([base, r.journeys]);
+              rankJourneys(
+                merged,
+                when: _searchedWhen ?? when,
+                arriveBy: _arriveBy,
+                dticket: settings.dticket,
+                minTransfer: settings.minTransferMinutes,
+              );
+              r = SearchResult(merged, r.status, done: r.done, fetchedAt: r.fetchedAt);
+            }
+            last = r;
+            if (mounted) setState(() => _result = r);
+          },
+          onDone: () {
+            if (!mounted) return;
+            final r = last;
             setState(() {
-              _result = SearchResult(cached.journeys, r.status, done: true, fetchedAt: cached.fetchedAt);
-              _fromCache = true;
+              _searching = false;
+              _loadingMore = false;
             });
-          } else if (previous != null && previous.journeys.isNotEmpty) {
-            setState(() => _result = SearchResult(previous.journeys, r.status, done: true, fetchedAt: previous.fetchedAt));
-          }
-        }
-      },
-    );
+            if (r == null) return;
+            if (r.journeys.isNotEmpty) {
+              store.saveLastSearch(SavedSearch(SavedRoute(from, to), when, _arriveBy, r.journeys, r.fetchedAt));
+            } else if (r.status.values.every((x) => x.state != SourceState.ok)) {
+              // Everything failed (offline?): fall back to what we had for the same route.
+              final cached = store.lastSearch;
+              if (cached != null && cached.route.from.name == from.name && cached.route.to.name == to.name) {
+                setState(() {
+                  _result = SearchResult(cached.journeys, r.status, done: true, fetchedAt: cached.fetchedAt);
+                  _fromCache = true;
+                });
+              } else if (previous != null && previous.journeys.isNotEmpty) {
+                setState(() => _result = SearchResult(previous.journeys, r.status, done: true, fetchedAt: previous.fetchedAt));
+              }
+            }
+          },
+        );
   }
 
   /// Loads the connections right after the last one and adds them to the list.

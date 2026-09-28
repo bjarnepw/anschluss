@@ -12,6 +12,7 @@ import '../sources/flix.dart';
 import '../sources/oebb.dart';
 import '../sources/source.dart';
 import '../sources/transitous.dart';
+import '../offline/offline_pack.dart';
 import 'flix_combos.dart';
 import 'merge.dart';
 
@@ -40,11 +41,29 @@ final transitousSource = TransitousSource();
 final flixSource = FlixSource();
 final oebbSource = OebbSource();
 
-final Map<String, Source> sources = {'db': dbSource, 'transitous': transitousSource, 'flix': flixSource, 'oebb': oebbSource};
+final offlineSource = OfflineSource();
+
+final Map<String, Source> sources = {
+  'offline': offlineSource,
+  'db': dbSource,
+  'transitous': transitousSource,
+  'flix': flixSource,
+  'oebb': oebbSource,
+};
 
 const _sourceTimeout = Duration(seconds: 30);
 
-Stream<SearchResult> searchJourneys(Place from, Place to, SearchOptions opts, List<String> wanted, {bool hideTight = false}) {
+/// [offlineOnly]: use only the downloaded timetable (no data usage). Otherwise the offline timetable is used
+/// automatically when none of the online sources answers.
+Stream<SearchResult> searchJourneys(
+  Place from,
+  Place to,
+  SearchOptions opts,
+  List<String> wanted, {
+  bool hideTight = false,
+  bool offlineOnly = false,
+}) {
+  if (offlineOnly) wanted = ['offline'];
   final ctrl = StreamController<SearchResult>();
   final lists = <String, List<Journey>>{};
   final status = <String, SourceStatus>{};
@@ -72,6 +91,29 @@ Stream<SearchResult> searchJourneys(Place from, Place to, SearchOptions opts, Li
   void runCombos() {
     if (combosStarted) return;
     combosStarted = true;
+    // Nobody answered (no connection?): fall back to the offline timetable if there is one.
+    final noneOk = !status.values.any((x) => x.state == SourceState.ok);
+    if (noneOk && !wanted.contains('offline') && OfflinePack.instance.available) {
+      status['offline'] = const SourceStatus(SourceState.loading);
+      pending++;
+      emit();
+      final sw = Stopwatch()..start();
+      offlineSource
+          .journeys(from, to, opts)
+          .then((list) {
+            lists['offline'] = list;
+            status['offline'] = SourceStatus(SourceState.ok, count: list.length, ms: sw.elapsedMilliseconds);
+          })
+          .catchError((Object e) {
+            status['offline'] = SourceStatus(SourceState.failed, error: e is SourceException ? e.message : e.toString());
+          })
+          .whenComplete(() {
+            pending--;
+            emit();
+            ctrl.close();
+          });
+      return;
+    }
     final useCombos = opts.moreAlternatives && wanted.contains('flix') && !opts.dticketOnly && breaker.pausedFor('flix') == null;
     if (!useCombos) {
       ctrl.close();
@@ -157,7 +199,8 @@ bool _inWindow(Journey j, SearchOptions o) {
 }
 
 /// Station suggestions from DB and Transitous, deduplicated by name/proximity.
-Future<List<Place>> searchLocations(String q) async {
+Future<List<Place>> searchLocations(String q, {bool offlineOnly = false}) async {
+  if (offlineOnly) return offlineSource.locations(q).catchError((_) => <Place>[]);
   final results = await Future.wait<List<Place>>([
     if (!kIsWeb || Net.instance.webProxy.isNotEmpty) dbSource.locations(q).catchError((_) => <Place>[]),
     transitousSource.locations(q).catchError((_) => <Place>[]),
@@ -173,5 +216,7 @@ Future<List<Place>> searchLocations(String q) async {
       }
     }
   }
+  // Offline (or both services down): station names from the downloaded timetable.
+  if (out.isEmpty && OfflinePack.instance.available) return offlineSource.locations(q).catchError((_) => <Place>[]);
   return out.take(10).toList();
 }

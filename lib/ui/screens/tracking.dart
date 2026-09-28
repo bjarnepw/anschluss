@@ -174,7 +174,13 @@ class _TripScreenState extends State<TripScreen> {
             const SizedBox(height: 12),
             JourneyStrip(journey: j, detailed: true),
             const SizedBox(height: 12),
-            SizedBox(height: 300, child: RouteMap(journey: j)),
+            SizedBox(
+              height: 300,
+              child: RouteMap(
+                journey: j,
+                onGeometry: (g) => store.updateTrip(trip.copyWith(journey: g)),
+              ),
+            ),
             const SizedBox(height: 6),
             Row(
               children: [

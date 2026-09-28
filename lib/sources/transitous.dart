@@ -120,6 +120,64 @@ class TransitousSource implements Source, LocationSource {
   }
 }
 
+/// Transitous transit modes for one of our modes (to look up a single train's track).
+String _modesFor(Mode m) => switch (m) {
+  Mode.long => 'HIGHSPEED_RAIL,LONG_DISTANCE,REGIONAL_FAST_RAIL',
+  Mode.night => 'NIGHT_RAIL,LONG_DISTANCE,HIGHSPEED_RAIL',
+  Mode.regional => 'REGIONAL_FAST_RAIL,REGIONAL_RAIL,RAIL,LONG_DISTANCE',
+  Mode.suburban => 'SUBURBAN,REGIONAL_RAIL,RAIL',
+  Mode.metro => 'SUBWAY,METRO',
+  Mode.tram => 'TRAM',
+  Mode.bus => 'BUS',
+  Mode.coach => 'COACH',
+  Mode.ferry => 'FERRY',
+  _ => 'TRANSIT',
+};
+
+/// The real track of one leg: asks Transitous for the same train (same departure time, same number)
+/// between the same two stops and returns its geometry. Null if it can't be matched.
+Future<List<List<double>>?> trackForLeg(Leg l) {
+  if (l.isWalk || !l.from.hasCoords || !l.to.hasCoords) return Future.value(null);
+  final key = 'track:${l.from.lat},${l.from.lon}>${l.to.lat},${l.to.lon}@${l.plannedDep.toUtc().toIso8601String()}';
+  return cache.get(key, const Duration(hours: 12), () async {
+    final params = {
+      'fromPlace': '${l.from.lat},${l.from.lon}',
+      'toPlace': '${l.to.lat},${l.to.lon}',
+      'time': '${l.plannedDep.subtract(const Duration(minutes: 3)).toUtc().toIso8601String().substring(0, 19)}Z',
+      'numItineraries': '3',
+      'maxTransfers': '0',
+      'transitModes': _modesFor(l.mode),
+      'maxPreTransitTime': '600',
+      'maxPostTransitTime': '600',
+      'joinInterlinedLegs': 'true',
+    };
+    try {
+      final data = await Net.instance.getJson(
+        Uri.parse('$_base/api/v6/plan').replace(queryParameters: params),
+        timeout: const Duration(seconds: 12),
+        retries: 0,
+      );
+      final number = RegExp(r'\d{2,}').firstMatch(l.line)?.group(0);
+      List<List<double>>? best;
+      for (final it in ((data['itineraries'] as List?) ?? []).whereType<Map<String, dynamic>>()) {
+        for (final raw in ((it['legs'] as List?) ?? []).whereType<Map<String, dynamic>>()) {
+          if (raw['mode'] == 'WALK') continue;
+          final start = DateTime.tryParse((raw['scheduledStartTime'] ?? raw['startTime'] ?? '') as String);
+          if (start == null || start.difference(l.plannedDep).inMinutes.abs() > 3) continue;
+          final name = '${raw['displayName'] ?? ''} ${raw['tripShortName'] ?? ''} ${raw['routeShortName'] ?? ''}';
+          final geo = _geometry(raw);
+          if (geo == null || geo.length < 3) continue;
+          if (number != null && name.contains(number)) return geo; // same train number: certain
+          best ??= geo;
+        }
+      }
+      return best;
+    } catch (_) {
+      return null;
+    }
+  });
+}
+
 List<Place> parseTransitousLocations(dynamic res) {
   if (res is! List) return [];
   return res

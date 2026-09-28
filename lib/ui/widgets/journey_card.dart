@@ -210,6 +210,15 @@ class PriceView extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = context.s;
     final t = Theme.of(context).textTheme;
+    if (journey.walkOnly) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text('0 €', style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+          Text(s.sourceLabel('walk'), style: t.labelSmall),
+        ],
+      );
+    }
     if (dticket && journey.dticket) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.end,
