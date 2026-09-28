@@ -1,0 +1,25 @@
+name: anschluss
+description: "Every train in Germany in one search: DB, FlixTrain, ÖBB and all regional operators, with prices and maps."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_map: ^8.3.2
+  geolocator: ^14.1.1
+  http: ^1.6.0
+  latlong2: ^0.10.1
+  shared_preferences: ^2.5.5
+  url_launcher: ^6.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

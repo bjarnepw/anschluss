@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths-ignore: ['**.md', 'LICENSE']
+  pull_request:
+    paths-ignore: ['**.md', 'LICENSE']
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'Platforms to build'
+        type: choice
+        default: default
+        options:
+          - default # android, linux, web
+          - all # + ios, macos
+          - none # only analyze + test
+      live_tests:
+        description: 'Also run tests against the real train APIs'
+        type: boolean
+        default: false
+
+# A newer push to the same branch cancels the older, still-running build.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: '3.47.0'
+
+jobs:
+  check:
+    name: Analyze & test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true # caches the SDK and ~/.pub-cache
+      - run: flutter pub get
+      - run: dart format --output=none --set-exit-if-changed --line-length 140 lib test tool || echo "::warning::Some files are not formatted"
+      - run: flutter analyze
+      - run: flutter test
+      - name: Live API tests
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.live_tests }}
+        run: flutter test --tags live --run-skipped
+        continue-on-error: true # external APIs can be down or rate-limit CI runners
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: check
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms != 'none' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: android, os: ubuntu-latest }
+          - { platform: linux, os: ubuntu-latest }
+          - { platform: web, os: ubuntu-latest }
+          - { platform: ios, os: macos-latest }
+          - { platform: macos, os: macos-latest }
+    steps:
+      # macOS runners are expensive: build Apple platforms only for tags or when asked for explicitly.
+      - name: Decide
+        id: gate
+        shell: bash
+        run: |
+          apple=false
+          [[ "${{ matrix.platform }}" == ios || "${{ matrix.platform }}" == macos ]] && apple=true
+          run=true
+          if $apple && [[ "${{ github.ref_type }}" != tag ]] && [[ "${{ inputs.platforms }}" != all ]]; then run=false; fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+
+      - uses: subosito/flutter-action@v2
+        if: steps.gate.outputs.run == 'true'
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-java@v4
+        if: steps.gate.outputs.run == 'true' && matrix.platform == 'android'
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Linux build dependencies
+        if: steps.gate.outputs.run == 'true' && matrix.platform == 'linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ninja-build libgtk-3-dev
+
+      - name: Cache CocoaPods
+        if: steps.gate.outputs.run == 'true' && (matrix.platform == 'ios' || matrix.platform == 'macos')
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ${{ matrix.platform }}/Pods
+          key: pods-${{ matrix.platform }}-${{ hashFiles('pubspec.lock') }}
+          restore-keys: pods-${{ matrix.platform }}-
+
+      - name: Build
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          flutter pub get
+          case "${{ matrix.platform }}" in
+            android) flutter build apk --release --split-per-abi ;;
+            linux)   flutter build linux --release && tar -C build/linux/x64/release/bundle -czf anschluss-linux-x64.tar.gz . ;;
+            web)     flutter build web --release --base-href /anschluss/ ;;
+            ios)     flutter build ios --release --no-codesign ;;
+            macos)   flutter build macos --release ;;
+          esac
+
+      - uses: actions/upload-artifact@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          name: anschluss-${{ matrix.platform }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            ${{ matrix.platform == 'android' && 'build/app/outputs/flutter-apk/*.apk' || '' }}
+            ${{ matrix.platform == 'linux' && 'anschluss-linux-x64.tar.gz' || '' }}
+            ${{ matrix.platform == 'web' && 'build/web' || '' }}
+            ${{ matrix.platform == 'ios' && 'build/ios/iphoneos/Runner.app' || '' }}
+            ${{ matrix.platform == 'macos' && 'build/macos/Build/Products/Release/*.app' || '' }}
