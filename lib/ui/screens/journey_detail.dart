@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/currency.dart';
 import '../../models/journey.dart';
 import '../../services/store.dart';
 import '../app_scope.dart';
@@ -30,6 +31,7 @@ List<Widget> bookingButtons(BuildContext context, Journey j) {
   final flix = j.prices.where((p) => p.source == 'flix').map((p) => p.url).whereType<String>().firstOrNull ?? j.bookingUrls['flix'];
   final db = j.bookingUrls['db'];
   final oebb = j.bookingUrls['oebb'];
+  final rj = j.prices.where((p) => p.source == 'regiojet').map((p) => p.url).whereType<String>().firstOrNull ?? j.bookingUrls['regiojet'];
   Future<void> open(String url) => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   return [
     if (flix != null)
@@ -40,7 +42,14 @@ List<Widget> bookingButtons(BuildContext context, Journey j) {
         label: Text(s.openBahn),
         onPressed: () => open(db),
       ),
-    if (oebb != null && db == null)
+    if (rj != null)
+      (flix == null && db == null ? FilledButton.icon : OutlinedButton.icon)(
+        icon: const Icon(Icons.confirmation_number_outlined),
+        label: Text(s.de ? 'Bei RegioJet buchen' : 'Book at RegioJet'),
+        onPressed: () => open(rj),
+      ),
+    // ÖBB links go straight to the exact connection, so show them for cross-border trips too.
+    if (oebb != null && (db == null || !oebb.endsWith('oebbtickets.at/')))
       OutlinedButton.icon(icon: const Icon(Icons.open_in_new), label: Text(s.oebbTickets), onPressed: () => open(oebb)),
   ];
 }
@@ -108,7 +117,12 @@ class JourneyDetailScreen extends StatelessWidget {
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     title: Text('${s.sourceLabel(p.source)}${p.partial ? (s.de ? ' (Teilpreis)' : ' (partial fare)') : ''}'),
-                    trailing: Text(fmtEur(p.amount), style: const TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: p.converted
+                        ? Text(
+                            '${p.originalAmount!.toStringAsFixed(p.originalAmount! >= 100 ? 0 : 2)} ${currencySymbol(p.originalCurrency!)} · ${s.de ? 'Kurs EZB' : 'ECB rate'}',
+                          )
+                        : null,
+                    trailing: Text('${p.converted ? '≈ ' : ''}${fmtEur(p.amount)}', style: const TextStyle(fontWeight: FontWeight.w700)),
                     onTap: p.url == null ? null : () => launchUrl(Uri.parse(p.url!), mode: LaunchMode.externalApplication),
                   ),
                 const SizedBox(height: 8),

@@ -6,6 +6,7 @@ import 'package:anschluss/models/journey.dart';
 import 'package:anschluss/sources/db.dart';
 import 'package:anschluss/sources/flix.dart';
 import 'package:anschluss/sources/oebb.dart';
+import 'package:anschluss/sources/regiojet.dart';
 import 'package:anschluss/sources/source.dart';
 import 'package:anschluss/sources/transitous.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -83,6 +84,21 @@ void main() {
       expect(flixCityQuery('Berlin Hbf (tief)'), 'Berlin');
       expect(flixCityQuery('S+U Berlin Hauptbahnhof'), 'Berlin');
       expect(flixCityQuery('Hamburg Hbf'), 'Hamburg');
+    });
+  });
+
+  group('RegioJet (real response)', () {
+    test('trains only, fare kept in CZK and converted to EUR', () async {
+      const praha = Place(name: 'Praha hl.n.', lat: 50.08, lon: 14.43);
+      const wien = Place(name: 'Wien Hbf', lat: 48.18, lon: 16.37);
+      final js = await parseRegioJet(fixture('regiojet_search.json'), praha, wien, {372825000: 'Prag - Hbf.'}, opts, 'u');
+      expect(js, isNotEmpty);
+      expect(js.every((j) => j.legs.single.mode == Mode.long), isTrue, reason: 'buses only with coaches enabled');
+      final p = js.first.bestPrice!;
+      expect(p.originalCurrency, 'CZK');
+      expect(p.converted, isTrue);
+      expect(p.amount, closeTo(p.originalAmount! / 24.4, p.amount * 0.15), reason: 'roughly the ECB rate');
+      expect(js.first.legs.single.from.name, 'Prag - Hbf.');
     });
   });
 

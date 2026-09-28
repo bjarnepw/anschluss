@@ -10,6 +10,7 @@ import '../models/journey.dart';
 import '../sources/db.dart';
 import '../sources/flix.dart';
 import '../sources/oebb.dart';
+import '../sources/regiojet.dart';
 import '../sources/source.dart';
 import '../sources/transitous.dart';
 import '../offline/offline_pack.dart';
@@ -39,6 +40,7 @@ class SearchResult {
 final dbSource = DbSource();
 final transitousSource = TransitousSource();
 final flixSource = FlixSource();
+final regioJetSource = RegioJetSource();
 final oebbSource = OebbSource();
 
 final offlineSource = OfflineSource();
@@ -49,6 +51,7 @@ final Map<String, Source> sources = {
   'transitous': transitousSource,
   'flix': flixSource,
   'oebb': oebbSource,
+  'regiojet': regioJetSource,
 };
 
 const _sourceTimeout = Duration(seconds: 30);

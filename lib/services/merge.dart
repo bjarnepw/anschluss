@@ -2,7 +2,14 @@
 // that carries every price and the best map geometry available. Then ranks them.
 import '../models/journey.dart';
 
-const _priority = {'db': 0, 'oebb': 1, 'transitous': 2, 'flix': 3, 'flixcombo': 4}; // whose leg details win (realtime, platforms)
+const _priority = {
+  'db': 0,
+  'oebb': 1,
+  'transitous': 2,
+  'flix': 3,
+  'regiojet': 3,
+  'flixcombo': 4,
+}; // whose leg details win (realtime, platforms)
 
 String _minute(DateTime d) => d.toUtc().toIso8601String().substring(0, 16);
 

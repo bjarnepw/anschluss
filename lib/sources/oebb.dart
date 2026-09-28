@@ -105,7 +105,15 @@ class OebbSource implements Source {
           if (opts.bike) {'type': 'BC', 'mode': 'INC'},
         ],
         'gisFltrL': [],
-        'getTariff': false,
+        // No prices from ÖBB, but a booking link for each exact connection.
+        'getTariff': true,
+        'trfReq': {
+          'jnyCl': opts.firstClass ? 1 : 2,
+          'tvlrProf': [
+            {'type': 'E'},
+          ],
+          'cType': 'PK',
+        },
         'ushrp': true,
         'getPT': true,
         'getIV': false,
@@ -263,7 +271,8 @@ List<Journey> parseOebbTrips(Map<String, dynamic> res, SearchOptions opts) {
     if (!opts.coach && legs.any((l) => l.mode == Mode.coach)) continue;
     final dt = transit.every((l) => dticketModes.contains(l.mode));
     if (opts.dticketOnly && !dt) continue;
-    out.add(Journey(source: 'oebb', legs: legs, dticket: dt, bookingUrls: {'oebb': 'https://shop.oebbtickets.at/'}));
+    final clickout = (c['trfRes'] as Map?)?['clickout'] as String?;
+    out.add(Journey(source: 'oebb', legs: legs, dticket: dt, bookingUrls: {'oebb': clickout ?? 'https://shop.oebbtickets.at/'}));
   }
   return out;
 }

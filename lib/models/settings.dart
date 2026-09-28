@@ -5,7 +5,7 @@ enum AppLanguage { de, en }
 
 enum SortMode { best, fast, cheap, early, transfers }
 
-const allSources = ['db', 'transitous', 'flix', 'oebb'];
+const allSources = ['db', 'transitous', 'flix', 'oebb', 'regiojet'];
 
 class Settings {
   /// Minimum transfer time (Umstiegszeit) in minutes. 0 = let each operator decide.

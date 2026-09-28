@@ -135,6 +135,8 @@ class S {
     'flix' => 'Flix',
     'oebb' => 'ÖBB',
     'flixcombo' => _('Flix-Kombi', 'Flix combos'),
+    'regiojet' => 'RegioJet',
+    'offline' => 'Offline',
     'walk' => _('Zu Fuß', 'Walk'),
     _ => id,
   };
@@ -143,6 +145,10 @@ class S {
     'transitous' => _('Offene Fahrplandaten, exakte Strecken', 'Open timetable data, exact routes'),
     'flix' => _('FlixTrain mit Preisen', 'FlixTrain with prices'),
     'oebb' => _('Nightjet, Österreich, grenzüberschreitend', 'Nightjet, Austria, cross-border'),
+    'regiojet' => _(
+      'Tschechien, Slowakei, Wien – Preise in Kronen, umgerechnet in €',
+      'Czechia, Slovakia, Vienna – fares in CZK, converted to €',
+    ),
     _ => '',
   };
   String found(int n) => de ? '$n gefunden' : '$n found';

@@ -15,7 +15,7 @@ void main() {
       '${j.departure.toLocal()} → ${j.arrival.toLocal()} ${j.transit.map((l) => l.line).join(' / ')} '
       '${j.prices.map((p) => '${p.source}:${p.amount}').join(',')} [${j.sources.join(',')}]';
 
-  for (final id in sources.keys.where((k) => k != 'offline')) {
+  for (final id in sources.keys.where((k) => k != 'offline' && k != 'regiojet')) {
     test('$id returns journeys in the future', () async {
       final when = DateTime.now().add(const Duration(hours: 12));
       final js = await sources[id]!.journeys(berlin, hamburg, SearchOptions(when: when));
@@ -73,4 +73,17 @@ void main() {
       }
     }
   }, timeout: const Timeout(Duration(minutes: 3)));
+
+  test('RegioJet Prague → Vienna with fares converted from CZK', () async {
+    const praha = Place(name: 'Praha hl.n.', lat: 50.0831, lon: 14.4353);
+    const wien = Place(name: 'Wien Hbf', lat: 48.1852, lon: 16.3760);
+    final js = await regioJetSource.journeys(praha, wien, SearchOptions(when: DateTime.now().add(const Duration(hours: 12))));
+    for (final j in js) {
+      final p = j.bestPrice!;
+      // ignore: avoid_print
+      print('${fmt(j)} = ${p.originalAmount} ${p.originalCurrency}');
+    }
+    expect(js, isNotEmpty);
+    expect(js.first.bestPrice!.originalCurrency, 'CZK');
+  });
 }

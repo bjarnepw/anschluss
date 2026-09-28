@@ -66,6 +66,19 @@ class Net {
     );
   }
 
+  Future<String> getText(Uri url, {Duration timeout = const Duration(seconds: 12)}) {
+    return _withRetry(
+      1,
+      () async {
+        final res = await _client.get(url, headers: {if (!kIsWeb) 'User-Agent': userAgent}).timeout(timeout);
+        if (res.statusCode != 200) throw SourceException('HTTP ${res.statusCode} from ${url.host}', transient: res.statusCode >= 500);
+        return utf8.decode(res.bodyBytes, allowMalformed: true);
+      },
+      url.host,
+      timeout,
+    );
+  }
+
   Future<dynamic> postJson(
     Uri url,
     Object body, {

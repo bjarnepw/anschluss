@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/currency.dart';
 import '../../models/journey.dart';
 import '../app_scope.dart';
 import '../line_colors.dart';
@@ -234,11 +235,11 @@ class PriceView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Text(
-          '${p.partial ? (s.de ? 'ab ' : 'from ') : ''}${fmtEur(p.amount)}',
+          '${p.partial ? (s.de ? 'ab ' : 'from ') : ''}${p.converted ? '≈ ' : ''}${fmtEur(p.amount)}',
           style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800),
         ),
         Text(
-          '${s.sourceLabel(p.source)}${journey.prices.length > 1 ? ' · ${s.offers(journey.prices.length)}' : ''}${p.seats != null && p.seats! < 10 ? ' · ${p.seats} ${s.de ? 'Plätze' : 'seats'}' : ''}',
+          '${p.converted ? '${p.originalAmount!.round()} ${currencySymbol(p.originalCurrency!)} · ' : ''}${s.sourceLabel(p.source)}${journey.prices.length > 1 ? ' · ${s.offers(journey.prices.length)}' : ''}${p.seats != null && p.seats! < 10 ? ' · ${p.seats} ${s.de ? 'Plätze' : 'seats'}' : ''}',
           style: t.labelSmall,
         ),
       ],

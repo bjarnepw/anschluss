@@ -183,14 +183,29 @@ class Leg {
 }
 
 class Price {
-  final double amount;
+  final double amount; // euros
   final String currency;
   final String source;
   final bool partial;
   final String? url;
   final int? seats;
 
-  const Price({required this.amount, this.currency = 'EUR', required this.source, this.partial = false, this.url, this.seats});
+  /// Fare in the operator's own currency (e.g. 299 CZK); [amount] is then the converted euro value.
+  final double? originalAmount;
+  final String? originalCurrency;
+
+  const Price({
+    required this.amount,
+    this.currency = 'EUR',
+    required this.source,
+    this.partial = false,
+    this.url,
+    this.seats,
+    this.originalAmount,
+    this.originalCurrency,
+  });
+
+  bool get converted => originalCurrency != null && originalCurrency != 'EUR';
 
   Map<String, dynamic> toJson() => {
     'amount': amount,
@@ -199,6 +214,8 @@ class Price {
     'partial': partial,
     'url': url,
     'seats': seats,
+    'originalAmount': originalAmount,
+    'originalCurrency': originalCurrency,
   };
 
   factory Price.fromJson(Map<String, dynamic> j) => Price(
@@ -208,6 +225,8 @@ class Price {
     partial: j['partial'] == true,
     url: j['url'] as String?,
     seats: j['seats'] as int?,
+    originalAmount: (j['originalAmount'] as num?)?.toDouble(),
+    originalCurrency: j['originalCurrency'] as String?,
   );
 }
 
