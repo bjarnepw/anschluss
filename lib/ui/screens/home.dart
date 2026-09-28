@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../core/net.dart';
 import '../../models/journey.dart';
 import '../../models/settings.dart';
+import '../../services/merge.dart';
 import '../../services/search.dart';
 import '../../services/store.dart';
 import '../../sources/source.dart';
@@ -17,6 +18,8 @@ import 'journey_detail.dart';
 import 'settings_screen.dart';
 import 'station_picker.dart';
 import 'tracking.dart';
+import '../widgets/countdown.dart';
+import '../widgets/time_picker_sheet.dart';
 
 /// Map-first home: the map fills the screen, search + results live in a draggable bottom sheet
 /// (phones) or a floating side panel (wide screens).
@@ -34,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
   SortMode? _sort;
   SearchResult? _result;
   bool _searching = false;
+  bool _loadingMore = false;
   bool _fromCache = false;
   StreamSubscription<SearchResult>? _sub;
   String? _selectedId;
@@ -107,52 +111,68 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _pickTime() async {
-    final base = _when ?? DateTime.now();
-    final d = await showDatePicker(
-      context: context,
-      initialDate: base,
-      firstDate: DateTime.now().subtract(const Duration(days: 1)),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-    if (d == null || !mounted) return;
-    final t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(base));
-    if (t == null || !mounted) return;
-    setState(() => _when = DateTime(d.year, d.month, d.day, t.hour, t.minute));
+    final r = await showTimePickerSheet(context, initial: _when, arriveBy: _arriveBy);
+    if (r == null || !mounted) return;
+    setState(() {
+      _when = r.when;
+      _arriveBy = r.arriveBy;
+    });
   }
 
-  Future<void> _search({DateTime? at}) async {
+  /// [keep]: add the new connections to the current list (earlier/later) instead of replacing it.
+  Future<void> _search({DateTime? at, bool keep = false, bool? arriveBy}) async {
+    final direction = arriveBy ?? _arriveBy;
     final store = context.store;
     final s = context.s;
     if (_from == null || _to == null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.pickStations)));
       return;
     }
-    if (at != null) _when = at;
-    final when = _when ?? DateTime.now();
+    if (at != null && !keep) _when = at;
+    final when = at ?? _when ?? DateTime.now();
     final settings = store.settings;
     final from = _from!, to = _to!;
     store.rememberSearch(from, to);
     await _sub?.cancel();
     final previous = _result;
+    final base = keep ? [...?previous?.journeys] : const <Journey>[];
     setState(() {
       _searching = true;
+      _loadingMore = keep;
       _fromCache = false;
-      _selectedId = null;
-      _searchedWhen = when;
-      _result = null;
+      if (!keep) {
+        _selectedId = null;
+        _searchedWhen = when;
+        _result = null;
+      }
     });
     if (_sheet.isAttached && _sheet.size < _halfFraction) _moveSheet(_halfFraction);
-    final opts = SearchOptions.from(settings, when, arriveBy: _arriveBy);
+    final opts = SearchOptions.from(settings, when, arriveBy: direction);
     SearchResult? last;
     _sub = searchJourneys(from, to, opts, settings.sources, hideTight: settings.hideTightTransfers).listen(
-      (r) {
+      (snapshot) {
+        var r = snapshot;
+        if (keep) {
+          final merged = mergeJourneys([base, r.journeys]);
+          rankJourneys(
+            merged,
+            when: _searchedWhen ?? when,
+            arriveBy: _arriveBy,
+            dticket: settings.dticket,
+            minTransfer: settings.minTransferMinutes,
+          );
+          r = SearchResult(merged, r.status, done: r.done, fetchedAt: r.fetchedAt);
+        }
         last = r;
         if (mounted) setState(() => _result = r);
       },
       onDone: () {
         if (!mounted) return;
         final r = last;
-        setState(() => _searching = false);
+        setState(() {
+          _searching = false;
+          _loadingMore = false;
+        });
         if (r == null) return;
         if (r.journeys.isNotEmpty) {
           store.saveLastSearch(SavedSearch(SavedRoute(from, to), when, _arriveBy, r.journeys, r.fetchedAt));
@@ -172,25 +192,31 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// Loads the connections right after the last one and adds them to the list.
   void _later() {
-    final js = _result?.journeys ?? const <Journey>[];
-    if (js.isNotEmpty && !_arriveBy) {
-      final lastDep = js.map((j) => j.departure).reduce((a, b) => a.isAfter(b) ? a : b);
-      _search(at: lastDep.add(const Duration(minutes: 1)).toLocal());
-    } else {
-      _search(at: (_searchedWhen ?? DateTime.now()).add(const Duration(hours: 1)));
+    final js = (_result?.journeys ?? const <Journey>[]).where((j) => !j.walkOnly);
+    if (js.isEmpty) {
+      _search(at: (_searchedWhen ?? DateTime.now()).add(const Duration(minutes: 30)), keep: true);
+      return;
     }
+    final lastDep = js.map((j) => j.departure).reduce((a, b) => a.isAfter(b) ? a : b);
+    _searchKeepingDirection(lastDep.add(const Duration(minutes: 1)), arriveBy: false);
   }
 
+  /// Loads the connections right before the first one and adds them to the list.
   void _earlier() {
-    final js = _result?.journeys ?? const <Journey>[];
-    if (js.isNotEmpty && _arriveBy) {
-      final firstArr = js.map((j) => j.arrival).reduce((a, b) => a.isBefore(b) ? a : b);
-      _search(at: firstArr.subtract(const Duration(minutes: 1)).toLocal());
-    } else {
-      _search(at: (_searchedWhen ?? DateTime.now()).subtract(const Duration(hours: 1)));
+    final js = (_result?.journeys ?? const <Journey>[]).where((j) => !j.walkOnly);
+    if (js.isEmpty) {
+      _search(at: (_searchedWhen ?? DateTime.now()).subtract(const Duration(minutes: 30)), keep: true);
+      return;
     }
+    final firstArr = js.map((j) => j.arrival).reduce((a, b) => a.isBefore(b) ? a : b);
+    _searchKeepingDirection(firstArr.subtract(const Duration(minutes: 1)), arriveBy: true);
   }
+
+  /// Earlier = "arrive before the first arrival", later = "depart after the last departure" – this gives
+  /// exactly the neighbouring connections, independent of the user's own depart/arrive choice.
+  void _searchKeepingDirection(DateTime at, {required bool arriveBy}) => _search(at: at.toLocal(), keep: true, arriveBy: arriveBy);
 
   void _openDetails(Journey j) => Navigator.push(
     context,
@@ -303,7 +329,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ],
             ),
-            bottomNavigationBar: store.tracked == null ? null : _TrackedBar(tracked: store.tracked!),
+            bottomNavigationBar: store.activeTrip == null ? null : _TripBar(trip: store.activeTrip!),
           ),
         );
       },
@@ -324,6 +350,15 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             const Text('Anschluss', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
             IconButton(
+              tooltip: s.de ? 'Meine Reisen' : 'My trips',
+              icon: Badge(
+                isLabelVisible: context.store.trips.any((t) => !t.finished),
+                label: Text('${context.store.trips.where((t) => !t.finished).length}'),
+                child: const Icon(Icons.bookmarks_outlined),
+              ),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TripsScreen())),
+            ),
+            IconButton(
               tooltip: s.settings,
               icon: const Icon(Icons.tune),
               onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
@@ -342,6 +377,15 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           const Text('Anschluss', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
           const Spacer(),
+          IconButton(
+            tooltip: s.de ? 'Meine Reisen' : 'My trips',
+            icon: Badge(
+              isLabelVisible: context.store.trips.any((t) => !t.finished),
+              label: Text('${context.store.trips.where((t) => !t.finished).length}'),
+              child: const Icon(Icons.bookmarks_outlined),
+            ),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TripsScreen())),
+          ),
           IconButton(
             tooltip: s.settings,
             icon: const Icon(Icons.tune),
@@ -444,7 +488,13 @@ class _HomeScreenState extends State<HomeScreen> {
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: TextButton.icon(onPressed: _searching ? null : _earlier, icon: const Icon(Icons.expand_less), label: Text(s.earlier)),
+            child: TextButton.icon(
+              onPressed: _searching ? null : _earlier,
+              icon: _loadingMore
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.expand_less),
+              label: Text(s.earlier),
+            ),
           ),
         ),
       SliverPadding(
@@ -508,7 +558,13 @@ class _HomeScreenState extends State<HomeScreen> {
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            child: TextButton.icon(onPressed: _searching ? null : _later, icon: const Icon(Icons.expand_more), label: Text(s.later)),
+            child: TextButton.icon(
+              onPressed: _searching ? null : _later,
+              icon: _loadingMore
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.expand_more),
+              label: Text(s.later),
+            ),
           ),
         ),
       // Room so the last card can scroll above the tracked-trip bar / home indicator.
@@ -747,41 +803,58 @@ class _TimeChip extends StatelessWidget {
   }
 }
 
-class _TrackedBar extends StatelessWidget {
-  final Tracked tracked;
-  const _TrackedBar({required this.tracked});
+class _TripBar extends StatelessWidget {
+  final SavedTrip trip;
+  const _TripBar({required this.trip});
 
   @override
   Widget build(BuildContext context) {
     final s = context.s;
-    final j = tracked.journey;
+    final j = trip.journey;
     final cs = Theme.of(context).colorScheme;
     final buffer = j.tightestBuffer;
+    final next = j.departure.isAfter(DateTime.now()) ? j.departure : j.arrival;
     return Material(
       color: cs.primaryContainer,
       child: SafeArea(
         top: false,
         child: InkWell(
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TrackingScreen())),
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TripScreen(tripId: trip.id))),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
             child: Row(
               children: [
-                Icon(buffer != null && buffer < 0 ? Icons.warning_amber_rounded : Icons.my_location, color: cs.onPrimaryContainer),
+                Icon(
+                  buffer != null && buffer < 0 ? Icons.warning_amber_rounded : (trip.ongoing ? Icons.train : Icons.bookmark),
+                  color: cs.onPrimaryContainer,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(s.tracking, style: Theme.of(context).textTheme.labelMedium?.copyWith(color: cs.onPrimaryContainer)),
                       Text(
-                        '${fmtTime(j.departure)} ${tracked.route.from.name} → ${fmtTime(j.arrival)} ${tracked.route.to.name}',
+                        trip.ongoing ? s.tracking : (s.de ? 'Nächste Reise' : 'Next trip'),
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(color: cs.onPrimaryContainer),
+                      ),
+                      Text(
+                        '${fmtTime(j.departure)} ${trip.route.from.name} → ${fmtTime(j.arrival)} ${trip.route.to.name}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: cs.onPrimaryContainer, fontWeight: FontWeight.w700),
                       ),
                     ],
+                  ),
+                ),
+                Countdown(
+                  target: next,
+                  de: s.de,
+                  showWithin: const Duration(hours: 12),
+                  style: TextStyle(
+                    color: cs.onPrimaryContainer,
+                    fontWeight: FontWeight.w800,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
                 Icon(Icons.chevron_right, color: cs.onPrimaryContainer),

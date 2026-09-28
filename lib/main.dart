@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'services/store.dart';
+import 'services/trip_updates.dart';
 import 'ui/app_scope.dart';
 import 'ui/screens/home.dart';
 
@@ -8,6 +9,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final store = AppStore();
   await store.load();
+  TripUpdater.instance = TripUpdater(store)..start();
   runApp(AnschlussApp(store: store));
 }
 

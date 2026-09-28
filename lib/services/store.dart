@@ -1,4 +1,4 @@
-// App state + persistence (settings, favourites, recents, offline copy of the last search, tracked journey).
+// App state + persistence (settings, favourites, recents, offline copy of the last search, saved trips).
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -45,15 +45,55 @@ class SavedSearch {
   );
 }
 
-/// A journey the user pinned to follow live.
-class Tracked {
+/// A trip the user saved: kept on the device (works offline) and refreshed whenever there is a connection.
+class SavedTrip {
+  final String id;
   final Journey journey;
   final SavedRoute route;
-  const Tracked(this.journey, this.route);
+  final DateTime savedAt;
+  final DateTime? updatedAt;
 
-  Map<String, dynamic> toJson() => {'journey': journey.toJson(), 'route': route.toJson()};
-  factory Tracked.fromJson(Map<String, dynamic> j) =>
-      Tracked(Journey.fromJson(j['journey'] as Map<String, dynamic>), SavedRoute.fromJson(j['route'] as Map<String, dynamic>));
+  /// What changed on refreshes (delays, platforms, cancellations), newest first.
+  final List<String> changes;
+
+  const SavedTrip({
+    required this.id,
+    required this.journey,
+    required this.route,
+    required this.savedAt,
+    this.updatedAt,
+    this.changes = const [],
+  });
+
+  bool get finished => journey.arrival.isBefore(DateTime.now());
+  bool get ongoing => !journey.departure.isAfter(DateTime.now()) && !finished;
+
+  SavedTrip copyWith({Journey? journey, DateTime? updatedAt, List<String>? changes}) => SavedTrip(
+    id: id,
+    journey: journey ?? this.journey,
+    route: route,
+    savedAt: savedAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    changes: changes ?? this.changes,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'journey': journey.toJson(),
+    'route': route.toJson(),
+    'savedAt': savedAt.toIso8601String(),
+    'updatedAt': updatedAt?.toIso8601String(),
+    'changes': changes,
+  };
+
+  factory SavedTrip.fromJson(Map<String, dynamic> j) => SavedTrip(
+    id: j['id'] as String,
+    journey: Journey.fromJson(j['journey'] as Map<String, dynamic>),
+    route: SavedRoute.fromJson(j['route'] as Map<String, dynamic>),
+    savedAt: DateTime.tryParse(j['savedAt'] as String? ?? '') ?? DateTime.now(),
+    updatedAt: DateTime.tryParse(j['updatedAt'] as String? ?? ''),
+    changes: ((j['changes'] as List?) ?? const []).whereType<String>().toList(),
+  );
 }
 
 class AppStore extends ChangeNotifier {
@@ -64,7 +104,7 @@ class AppStore extends ChangeNotifier {
   List<Place> recentPlaces = [];
   List<SavedRoute> recentRoutes = [];
   SavedSearch? lastSearch;
-  Tracked? tracked;
+  List<SavedTrip> trips = [];
 
   Future<void> load() async {
     try {
@@ -75,13 +115,23 @@ class AppStore extends ChangeNotifier {
       recentRoutes = _list('recentRoutes', SavedRoute.fromJson);
       final ls = _read('lastSearch');
       if (ls is Map<String, dynamic>) lastSearch = SavedSearch.fromJson(ls);
-      final tr = _read('tracked');
-      if (tr is Map<String, dynamic>) tracked = Tracked.fromJson(tr);
-      // A tracked journey that ended more than 2 h ago is no longer useful.
-      if (tracked != null && tracked!.journey.arrival.isBefore(DateTime.now().subtract(const Duration(hours: 2)))) {
-        tracked = null;
+      trips = _list('trips', SavedTrip.fromJson);
+      // Migrate the single "tracked" journey of older versions.
+      final old = _read('tracked');
+      if (old is Map<String, dynamic>) {
+        try {
+          final j = Journey.fromJson(old['journey'] as Map<String, dynamic>);
+          trips.add(
+            SavedTrip(id: j.id, journey: j, route: SavedRoute.fromJson(old['route'] as Map<String, dynamic>), savedAt: DateTime.now()),
+          );
+        } catch (_) {}
         _write('tracked', null);
       }
+      // Trips that ended more than a day ago are no longer useful.
+      final cutoff = DateTime.now().subtract(const Duration(days: 1));
+      trips.removeWhere((t) => t.journey.arrival.isBefore(cutoff));
+      _sortTrips();
+      _writeTrips();
     } catch (e) {
       debugPrint('store: could not load saved data: $e');
     }
@@ -182,9 +232,42 @@ class AppStore extends ChangeNotifier {
     _write('lastSearch', s.toJson());
   }
 
-  void track(Tracked? t) {
-    tracked = t;
-    _write('tracked', t?.toJson());
+  void _sortTrips() => trips.sort((a, b) => a.journey.departure.compareTo(b.journey.departure));
+  void _writeTrips() => _write('trips', trips.map((t) => t.toJson()).toList());
+
+  SavedTrip? tripById(String id) => trips.where((t) => t.id == id).firstOrNull;
+
+  bool isSaved(Journey j) => trips.any((t) => t.id == j.id);
+
+  /// The trip to show in the bar at the bottom: the one underway, else the next one today.
+  SavedTrip? get activeTrip {
+    final now = DateTime.now();
+    return trips.where((t) => t.ongoing).firstOrNull ??
+        trips.where((t) => t.journey.departure.isAfter(now) && t.journey.departure.difference(now).inHours < 12).firstOrNull;
+  }
+
+  SavedTrip saveTrip(Journey j, SavedRoute route) {
+    final existing = tripById(j.id);
+    if (existing != null) return existing;
+    final t = SavedTrip(id: j.id, journey: j, route: route, savedAt: DateTime.now(), updatedAt: DateTime.now());
+    trips.add(t);
+    _sortTrips();
+    _writeTrips();
+    notifyListeners();
+    return t;
+  }
+
+  void removeTrip(String id) {
+    trips.removeWhere((t) => t.id == id);
+    _writeTrips();
+    notifyListeners();
+  }
+
+  void updateTrip(SavedTrip t) {
+    final i = trips.indexWhere((x) => x.id == t.id);
+    if (i < 0) return;
+    trips[i] = t;
+    _writeTrips();
     notifyListeners();
   }
 }

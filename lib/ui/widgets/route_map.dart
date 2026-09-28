@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../core/tiles/tile_cache.dart';
 import '../../models/journey.dart';
+import '../../services/location.dart';
 import '../app_scope.dart';
 import '../line_colors.dart';
 
@@ -37,11 +39,37 @@ class _RouteMapState extends State<RouteMap> {
   bool _rail = false;
   bool _ready = false;
   final LayerHitNotifier<String> _hit = ValueNotifier(null);
+  static final _tiles = cachedTileProvider();
+  static final _railTiles = cachedTileProvider();
+  final _loc = LocationService.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    _loc.position.addListener(_onPosition);
+    _loc.resumeIfAllowed();
+  }
 
   @override
   void dispose() {
+    _loc.position.removeListener(_onPosition);
     _hit.dispose();
     super.dispose();
+  }
+
+  void _onPosition() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _locate() async {
+    final ok = await _loc.enable();
+    if (!mounted) return;
+    final p = _loc.position.value;
+    if (!ok || p == null) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(context.s.noLocation)));
+      return;
+    }
+    _ctrl.move(LatLng(p.latitude, p.longitude), 14, offset: Offset(0, -(widget.padding.bottom - widget.padding.top) / 2));
   }
 
   @override
@@ -191,6 +219,8 @@ class _RouteMapState extends State<RouteMap> {
     }
 
     final pts = _points();
+    final pos = _loc.position.value;
+    final me = pos == null ? null : LatLng(pos.latitude, pos.longitude);
     final map = FlutterMap(
       mapController: _ctrl,
       options: MapOptions(
@@ -204,7 +234,8 @@ class _RouteMapState extends State<RouteMap> {
       ),
       children: [
         TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          urlTemplate: context.store.settings.tileUrl.isEmpty ? osmTemplate : context.store.settings.tileUrl,
+          tileProvider: _tiles,
           userAgentPackageName: 'de.bjarnepw.anschluss',
           tileBuilder: b == Brightness.dark ? darkModeTileBuilder : null,
         ),
@@ -213,6 +244,7 @@ class _RouteMapState extends State<RouteMap> {
             opacity: 0.7,
             child: TileLayer(
               urlTemplate: 'https://tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',
+              tileProvider: _railTiles,
               userAgentPackageName: 'de.bjarnepw.anschluss',
             ),
           ),
@@ -227,6 +259,37 @@ class _RouteMapState extends State<RouteMap> {
           ),
         PolylineLayer(polylines: lines),
         MarkerLayer(markers: markers),
+        if (me != null) ...[
+          CircleLayer(
+            circles: [
+              CircleMarker(
+                point: me,
+                radius: pos!.accuracy.clamp(5, 500).toDouble(),
+                useRadiusInMeter: true,
+                color: Colors.blue.withValues(alpha: 0.12),
+                borderColor: Colors.blue.withValues(alpha: 0.4),
+                borderStrokeWidth: 1,
+              ),
+            ],
+          ),
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: me,
+                width: 22,
+                height: 22,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade600,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 3),
+                    boxShadow: const [BoxShadow(blurRadius: 6, color: Colors.black38)],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
         Padding(
           padding: EdgeInsets.only(bottom: widget.padding.bottom, left: widget.padding.left),
           child: const SimpleAttributionWidget(source: Text('OpenStreetMap, OpenRailwayMap')),
@@ -244,6 +307,11 @@ class _RouteMapState extends State<RouteMap> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            IconButton(
+              tooltip: context.s.myLocation,
+              icon: Icon(me != null ? Icons.my_location : Icons.location_searching),
+              onPressed: _locate,
+            ),
             IconButton(
               tooltip: context.s.de ? 'Schienennetz' : 'Railway network',
               isSelected: _rail,

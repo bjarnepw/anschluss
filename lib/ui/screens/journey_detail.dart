@@ -56,7 +56,7 @@ class JourneyDetailScreen extends StatelessWidget {
     final store = context.store;
     final j = journey;
     final t = Theme.of(context).textTheme;
-    final trackingThis = store.tracked?.journey.id == j.id;
+    final saved = store.isSaved(j);
 
     return Scaffold(
       appBar: AppBar(
@@ -90,7 +90,7 @@ class JourneyDetailScreen extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 10),
-              JourneyStrip(journey: j),
+              JourneyStrip(journey: j, detailed: true),
               const SizedBox(height: 10),
               Wrap(
                 spacing: 6,
@@ -119,15 +119,11 @@ class JourneyDetailScreen extends StatelessWidget {
                 children: [
                   ...bookingButtons(context, j),
                   FilledButton.tonalIcon(
-                    icon: Icon(trackingThis ? Icons.location_off : Icons.my_location),
-                    label: Text(trackingThis ? s.stopTracking : s.track),
+                    icon: Icon(saved ? Icons.bookmark : Icons.bookmark_add_outlined),
+                    label: Text(saved ? (s.de ? 'Gespeichert – öffnen' : 'Saved – open') : (s.de ? 'Reise speichern' : 'Save trip')),
                     onPressed: () {
-                      if (trackingThis) {
-                        store.track(null);
-                      } else {
-                        store.track(Tracked(j, route));
-                        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const TrackingScreen()));
-                      }
+                      final t = store.saveTrip(j, route);
+                      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => TripScreen(tripId: t.id)));
                     },
                   ),
                 ],

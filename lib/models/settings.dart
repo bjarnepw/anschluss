@@ -48,6 +48,10 @@ class Settings {
   /// Search wider: cheaper/slower DB routes, more Transitous options, Flix + feeder combinations.
   final bool moreAlternatives;
 
+  /// Map tile URL template; empty = OpenStreetMap. Needed for pre-downloading offline maps,
+  /// which the OpenStreetMap servers do not allow.
+  final String tileUrl;
+
   const Settings({
     this.minTransferMinutes = 0,
     this.hideTightTransfers = false,
@@ -68,6 +72,7 @@ class Settings {
     this.maxWalkMinutes = 15,
     this.includeWalking = true,
     this.moreAlternatives = true,
+    this.tileUrl = '',
   });
 
   Settings copyWith({
@@ -90,6 +95,7 @@ class Settings {
     int? maxWalkMinutes,
     bool? includeWalking,
     bool? moreAlternatives,
+    String? tileUrl,
   }) => Settings(
     minTransferMinutes: minTransferMinutes ?? this.minTransferMinutes,
     hideTightTransfers: hideTightTransfers ?? this.hideTightTransfers,
@@ -110,6 +116,7 @@ class Settings {
     maxWalkMinutes: maxWalkMinutes ?? this.maxWalkMinutes,
     includeWalking: includeWalking ?? this.includeWalking,
     moreAlternatives: moreAlternatives ?? this.moreAlternatives,
+    tileUrl: tileUrl ?? this.tileUrl,
   );
 
   Map<String, dynamic> toJson() => {
@@ -132,6 +139,7 @@ class Settings {
     'maxWalkMinutes': maxWalkMinutes,
     'includeWalking': includeWalking,
     'moreAlternatives': moreAlternatives,
+    'tileUrl': tileUrl,
   };
 
   factory Settings.fromJson(Map<String, dynamic> j) {
@@ -157,6 +165,7 @@ class Settings {
       maxWalkMinutes: pick('maxWalkMinutes', d.maxWalkMinutes).clamp(5, 60),
       includeWalking: pick('includeWalking', d.includeWalking),
       moreAlternatives: pick('moreAlternatives', d.moreAlternatives),
+      tileUrl: pick('tileUrl', d.tileUrl),
     );
   }
 }

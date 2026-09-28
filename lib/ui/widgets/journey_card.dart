@@ -5,54 +5,131 @@ import '../app_scope.dart';
 import '../line_colors.dart';
 import '../strings.dart';
 
-/// Horizontal bar: each segment's width = its share of the travel time, colour = the line's own shade.
+/// Horizontal bar: each segment is placed at its exact time, colour = the line's own shade.
+/// Transfer gaps show the minutes you have; [detailed] adds time labels underneath.
 class JourneyStrip extends StatelessWidget {
   final Journey journey;
   final double height;
-  const JourneyStrip({super.key, required this.journey, this.height = 22});
+  final bool detailed;
+  const JourneyStrip({super.key, required this.journey, this.height = 22, this.detailed = false});
 
   @override
   Widget build(BuildContext context) {
     final b = Theme.of(context).brightness;
-    final total = journey.duration <= 0 ? 1 : journey.duration;
-    final children = <Widget>[];
-    DateTime? prevArr;
-    for (final l in journey.legs) {
-      if (prevArr != null) {
-        final wait = l.dep.difference(prevArr).inMinutes;
-        if (wait > 2) children.add(Expanded(flex: (wait * 1000 ~/ total).clamp(1, 100000), child: const SizedBox()));
-      }
-      final mins = l.minutes < 1 ? 1 : l.minutes;
-      final c = lineColor(l, b);
-      final label = l.isWalk ? '' : l.line.replaceAll(RegExp(r'\s*\(.*\)'), '');
-      children.add(
-        Expanded(
-          flex: (mins * 1000 ~/ total).clamp(1, 100000),
-          child: Tooltip(
-            message: '${l.line} ${fmtTime(l.dep)}–${fmtTime(l.arr)}',
-            child: Container(
-              height: l.isWalk ? height / 3 : height,
-              margin: const EdgeInsets.symmetric(horizontal: 1),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(color: l.isWalk ? c.withValues(alpha: 0.5) : c, borderRadius: BorderRadius.circular(6)),
-              child: label.isEmpty
-                  ? null
-                  : Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.clip,
-                      softWrap: false,
-                      style: TextStyle(color: onLineColor(c), fontSize: 11, fontWeight: FontWeight.w700),
+    final cs = Theme.of(context).colorScheme;
+    final start = journey.departure;
+    final total = journey.arrival.difference(start).inSeconds.clamp(60, 1 << 30).toDouble();
+    return LayoutBuilder(
+      builder: (context, c) {
+        final w = c.maxWidth;
+        double x(DateTime t) => (t.difference(start).inSeconds / total * w).clamp(0, w);
+        final children = <Widget>[];
+        final labels = <(double, String, bool)>[]; // x, text, bold
+        DateTime? prevArr;
+        for (final l in journey.legs) {
+          final left = x(l.dep), right = x(l.arr);
+          final width = (right - left).clamp(3.0, w);
+          if (prevArr != null && !l.isWalk) {
+            final wait = l.dep.difference(prevArr).inMinutes;
+            final gapL = x(prevArr), gapW = left - gapL;
+            if (wait > 0 && gapW > 16) {
+              children.add(
+                Positioned(
+                  left: gapL,
+                  width: gapW,
+                  top: 0,
+                  height: height,
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        "$wait'",
+                        style: TextStyle(fontSize: 10, color: cs.onSurfaceVariant, fontWeight: FontWeight.w600),
+                      ),
                     ),
+                  ),
+                ),
+              );
+            }
+          }
+          final col = lineColor(l, b);
+          final label = l.isWalk ? '' : l.line.replaceAll(RegExp(r'\s*\(.*\)'), '');
+          children.add(
+            Positioned(
+              left: left,
+              width: width,
+              top: l.isWalk ? height / 3 : 0,
+              height: l.isWalk ? height / 3 : height,
+              child: Tooltip(
+                message: '${l.line} ${fmtTime(l.dep)}–${fmtTime(l.arr)}',
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 1),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: l.isWalk ? col.withValues(alpha: 0.5) : col, borderRadius: BorderRadius.circular(6)),
+                  child: label.isEmpty || width < 24
+                      ? null
+                      : Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.clip,
+                          softWrap: false,
+                          style: TextStyle(color: onLineColor(col), fontSize: 11, fontWeight: FontWeight.w700),
+                        ),
+                ),
+              ),
             ),
+          );
+          if (!l.isWalk) {
+            labels.add((left, fmtTime(l.dep), prevArr == null));
+            labels.add((right, fmtTime(l.arr), identical(l, journey.transit.last)));
+          }
+          if (!l.isWalk) prevArr = l.arr;
+        }
+        final rows = <Widget>[
+          SizedBox(
+            height: height,
+            width: w,
+            child: Stack(clipBehavior: Clip.none, children: children),
           ),
-        ),
-      );
-      prevArr = l.arr;
-    }
-    return SizedBox(
-      height: height,
-      child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: children),
+        ];
+        if (detailed) {
+          // Time labels at every departure/arrival; skip ones that would overlap.
+          const labelW = 34.0;
+          final placed = <Widget>[];
+          double lastRight = -100;
+          labels.sort((a, b) => a.$1.compareTo(b.$1));
+          for (final (lx, text, bold) in labels) {
+            final left = (lx - labelW / 2).clamp(0, w - labelW).toDouble();
+            if (left < lastRight + 2 && !bold) continue;
+            lastRight = left + labelW;
+            placed.add(
+              Positioned(
+                left: left,
+                width: labelW,
+                top: 2,
+                child: Text(
+                  text,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
+                    color: cs.onSurfaceVariant,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+            );
+          }
+          rows.add(
+            SizedBox(
+              height: 18,
+              width: w,
+              child: Stack(children: placed),
+            ),
+          );
+        }
+        return Column(mainAxisSize: MainAxisSize.min, children: rows);
+      },
     );
   }
 }
