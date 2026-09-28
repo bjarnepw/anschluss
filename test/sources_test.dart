@@ -67,8 +67,8 @@ void main() {
     final data = fixture('flix_search.json');
     final cities = data['cities'] as Map<String, dynamic>;
     final ids = cities.keys.toList();
-    const from = (id: '40d8f682-8646-11e6-9066-549f350fcb0c', name: 'Berlin', lat: 52.52, lon: 13.37);
-    final to = (id: ids.firstWhere((k) => k != from.id), name: 'Hamburg', lat: 53.55, lon: 10.0);
+    const from = (id: '40d8f682-8646-11e6-9066-549f350fcb0c', name: 'Berlin', lat: 52.52, lon: 13.37, hasTrain: true);
+    final to = (id: ids.firstWhere((k) => k != from.id), name: 'Hamburg', lat: 53.55, lon: 10.0, hasTrain: true);
 
     test('trains only unless coaches are wanted, price includes platform fee', () {
       final trains = parseFlixSearch(data, from, to, opts);

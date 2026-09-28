@@ -12,6 +12,7 @@ import '../sources/flix.dart';
 import '../sources/oebb.dart';
 import '../sources/source.dart';
 import '../sources/transitous.dart';
+import 'flix_combos.dart';
 import 'merge.dart';
 
 enum SourceState { loading, ok, failed, paused, skipped }
@@ -48,15 +49,55 @@ Stream<SearchResult> searchJourneys(Place from, Place to, SearchOptions opts, Li
   final lists = <String, List<Journey>>{};
   final status = <String, SourceStatus>{};
   var pending = 0;
-
   void emit() {
     var merged = mergeJourneys(lists.values);
     if (hideTight && opts.minTransferMinutes > 0) {
       merged = merged.where((j) => (j.tightestBuffer ?? 999) >= opts.minTransferMinutes).toList();
     }
     if (opts.maxTransfers != null) merged = merged.where((j) => j.transfers <= opts.maxTransfers!).toList();
+    // Walking the whole way: only show it when it can compete with the trains.
+    final fastest = merged
+        .where((j) => !j.walkOnly && !j.cancelled)
+        .map((j) => j.duration)
+        .fold<int?>(null, (m, d) => m == null || d < m ? d : m);
+    merged = merged.where((j) => !j.walkOnly || fastest == null || j.duration <= 30 || j.duration <= fastest * 1.4).toList();
     rankJourneys(merged, when: opts.when, arriveBy: opts.arriveBy, dticket: opts.dticket, minTransfer: opts.minTransferMinutes);
     ctrl.add(SearchResult(merged, Map.of(status), done: pending == 0, fetchedAt: DateTime.now()));
+  }
+
+  var combosStarted = false;
+
+  // Phase 2, once the normal sources answered: Flix + feeder combinations built around the stations
+  // those results pass through, plus Flix prices for FlixTrain legs other sources found.
+  void runCombos() {
+    if (combosStarted) return;
+    combosStarted = true;
+    final useCombos = opts.moreAlternatives && wanted.contains('flix') && !opts.dticketOnly && breaker.pausedFor('flix') == null;
+    if (!useCombos) {
+      ctrl.close();
+      return;
+    }
+    status['flixcombo'] = const SourceStatus(SourceState.loading);
+    pending++;
+    emit();
+    final seed = mergeJourneys(lists.values);
+    final combos = FlixCombos(flixSource, transitousSource);
+    final sw = Stopwatch()..start();
+    Future.wait([combos.find(from, to, opts, seed), combos.enrich(seed, opts)])
+        .timeout(_sourceTimeout)
+        .then((r) {
+          final list = usefulCombos(r[0].where((j) => _inWindow(j, opts)).toList(), seed) + r[1];
+          lists['flixcombo'] = list;
+          status['flixcombo'] = SourceStatus(SourceState.ok, count: r[0].length, ms: sw.elapsedMilliseconds);
+        })
+        .catchError((Object e) {
+          status['flixcombo'] = SourceStatus(SourceState.failed, error: e is TimeoutException ? 'timeout' : e.toString());
+        })
+        .whenComplete(() {
+          pending--;
+          emit();
+          ctrl.close();
+        });
   }
 
   for (final id in wanted) {
@@ -93,14 +134,14 @@ Stream<SearchResult> searchJourneys(Place from, Place to, SearchOptions opts, Li
         .whenComplete(() {
           pending--;
           emit();
-          if (pending == 0) ctrl.close();
+          if (pending == 0) runCombos();
         });
   }
 
   if (pending == 0) {
     scheduleMicrotask(() {
       emit();
-      ctrl.close();
+      runCombos();
     });
   } else {
     scheduleMicrotask(emit); // show "loading" statuses right away

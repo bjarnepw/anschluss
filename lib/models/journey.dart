@@ -269,6 +269,9 @@ class Journey {
   int get transfers => (transit.length - 1).clamp(0, 99);
   bool get cancelled => legs.any((l) => l.cancelled);
 
+  /// Walking the whole way – free, no transfers.
+  bool get walkOnly => legs.isNotEmpty && legs.every((l) => l.isWalk);
+
   Price? get bestPrice {
     if (prices.isEmpty) return null;
     final sorted = [...prices]..sort((a, b) => a.amount.compareTo(b.amount));

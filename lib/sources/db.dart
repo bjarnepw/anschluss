@@ -147,6 +147,8 @@ class DbSource implements Source, LocationSource {
           if (opts.maxTransfers != null) 'maxUmstiege': opts.maxTransfers,
           if (opts.minTransferMinutes > 0) 'minUmstiegsdauer': opts.minTransferMinutes,
           if (opts.bike) 'fahrradmitnahme': true,
+          // Also return slower but cheaper connections, not only the fastest ones.
+          if (opts.moreAlternatives) 'economic': true,
         },
       },
     };

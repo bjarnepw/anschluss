@@ -134,6 +134,8 @@ class S {
     'transitous' => 'Transitous',
     'flix' => 'Flix',
     'oebb' => 'ÖBB',
+    'flixcombo' => _('Flix-Kombi', 'Flix combos'),
+    'walk' => _('Zu Fuß', 'Walk'),
     _ => id,
   };
   String sourceDesc(String id) => switch (id) {

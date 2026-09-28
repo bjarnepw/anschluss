@@ -39,6 +39,15 @@ class Settings {
   /// Auto-refresh interval for a tracked journey, in seconds.
   final int trackRefreshSeconds;
 
+  /// Longest walk to/from stations (minutes).
+  final int maxWalkMinutes;
+
+  /// Offer walking the whole way when it is competitive.
+  final bool includeWalking;
+
+  /// Search wider: cheaper/slower DB routes, more Transitous options, Flix + feeder combinations.
+  final bool moreAlternatives;
+
   const Settings({
     this.minTransferMinutes = 0,
     this.hideTightTransfers = false,
@@ -56,6 +65,9 @@ class Settings {
     this.language = AppLanguage.de,
     this.webProxy = '',
     this.trackRefreshSeconds = 60,
+    this.maxWalkMinutes = 15,
+    this.includeWalking = true,
+    this.moreAlternatives = true,
   });
 
   Settings copyWith({
@@ -75,6 +87,9 @@ class Settings {
     AppLanguage? language,
     String? webProxy,
     int? trackRefreshSeconds,
+    int? maxWalkMinutes,
+    bool? includeWalking,
+    bool? moreAlternatives,
   }) => Settings(
     minTransferMinutes: minTransferMinutes ?? this.minTransferMinutes,
     hideTightTransfers: hideTightTransfers ?? this.hideTightTransfers,
@@ -92,6 +107,9 @@ class Settings {
     language: language ?? this.language,
     webProxy: webProxy ?? this.webProxy,
     trackRefreshSeconds: trackRefreshSeconds ?? this.trackRefreshSeconds,
+    maxWalkMinutes: maxWalkMinutes ?? this.maxWalkMinutes,
+    includeWalking: includeWalking ?? this.includeWalking,
+    moreAlternatives: moreAlternatives ?? this.moreAlternatives,
   );
 
   Map<String, dynamic> toJson() => {
@@ -111,6 +129,9 @@ class Settings {
     'language': language.name,
     'webProxy': webProxy,
     'trackRefreshSeconds': trackRefreshSeconds,
+    'maxWalkMinutes': maxWalkMinutes,
+    'includeWalking': includeWalking,
+    'moreAlternatives': moreAlternatives,
   };
 
   factory Settings.fromJson(Map<String, dynamic> j) {
@@ -133,6 +154,9 @@ class Settings {
       language: AppLanguage.values.firstWhere((s) => s.name == j['language'], orElse: () => d.language),
       webProxy: pick('webProxy', d.webProxy),
       trackRefreshSeconds: pick('trackRefreshSeconds', d.trackRefreshSeconds).clamp(30, 600),
+      maxWalkMinutes: pick('maxWalkMinutes', d.maxWalkMinutes).clamp(5, 60),
+      includeWalking: pick('includeWalking', d.includeWalking),
+      moreAlternatives: pick('moreAlternatives', d.moreAlternatives),
     );
   }
 }

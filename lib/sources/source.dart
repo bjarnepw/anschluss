@@ -15,6 +15,18 @@ class SearchOptions {
   final int? age;
   final int results;
 
+  /// Longest walk to/from stations, in minutes.
+  final int maxWalkMinutes;
+
+  /// Also offer walking the whole way when that is competitive.
+  final bool includeWalking;
+
+  /// Ask sources for slower-but-cheaper and more varied connections, and search Flix+feeder combos.
+  final bool moreAlternatives;
+
+  /// Only local/regional trains and buses (Deutschlandticket modes) – used for Flix feeders.
+  final bool regionalOnly;
+
   const SearchOptions({
     required this.when,
     this.arriveBy = false,
@@ -28,6 +40,10 @@ class SearchOptions {
     this.coach = false,
     this.age,
     this.results = 6,
+    this.maxWalkMinutes = 15,
+    this.includeWalking = true,
+    this.moreAlternatives = true,
+    this.regionalOnly = false,
   });
 
   factory SearchOptions.from(Settings s, DateTime when, {bool arriveBy = false}) => SearchOptions(
@@ -42,6 +58,10 @@ class SearchOptions {
     bike: s.bike,
     coach: s.coach,
     age: s.age,
+    maxWalkMinutes: s.maxWalkMinutes,
+    includeWalking: s.includeWalking,
+    moreAlternatives: s.moreAlternatives,
+    results: s.moreAlternatives ? 8 : 6,
   );
 }
 

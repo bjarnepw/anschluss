@@ -26,6 +26,11 @@ const _modes = {
   'WALK': Mode.walk,
 };
 
+const _regional = 'REGIONAL_FAST_RAIL,REGIONAL_RAIL,RAIL,SUBURBAN,SUBWAY,METRO,TRAM,BUS,FERRY,CABLE_CAR,FUNICULAR,ODM';
+
+/// Walking the whole way is only offered up to this long.
+const _maxWalkOnlyMinutes = 75;
+
 const _noCoach =
     'HIGHSPEED_RAIL,LONG_DISTANCE,NIGHT_RAIL,REGIONAL_FAST_RAIL,REGIONAL_RAIL,RAIL,SUBURBAN,SUBWAY,METRO,'
     'TRAM,BUS,FERRY,CABLE_CAR,FUNICULAR,AERIAL_LIFT,ODM,OTHER';
@@ -102,7 +107,13 @@ class TransitousSource implements Source, LocationSource {
       if (opts.bike) 'requireBikeTransport': 'true',
       // Ask for trains-only routing instead of filtering afterwards – otherwise night searches come back
       // as FlixBus-only and end up empty.
-      if (!opts.coach) 'transitModes': _noCoach,
+      if (opts.regionalOnly) 'transitModes': _regional else if (!opts.coach) 'transitModes': _noCoach,
+      // Walking: how far to walk to/from stations, and whether walking the whole way is an option.
+      'maxPreTransitTime': '${opts.maxWalkMinutes * 60}',
+      'maxPostTransitTime': '${opts.maxWalkMinutes * 60}',
+      if (opts.includeWalking) ...{'directModes': 'WALK', 'maxDirectTime': '${_maxWalkOnlyMinutes * 60}'},
+      // A 3 h window returns more (and more varied) connections than the default 2 h.
+      if (opts.moreAlternatives) 'searchWindow': '${3 * 3600}',
     };
     final data = await _plan(params);
     return parseTransitousPlan(data, opts);
@@ -217,6 +228,12 @@ List<Journey> parseTransitousPlan(Map<String, dynamic> data, SearchOptions opts)
     final dt = transit.every((l) => dticketModes.contains(l.mode));
     if (opts.dticketOnly && !dt) continue;
     out.add(Journey(source: 'transitous', legs: legs, dticket: dt));
+  }
+  // "direct" = walking the whole way (only requested with directModes=WALK).
+  for (final it in ((data['direct'] as List?) ?? []).whereType<Map<String, dynamic>>()) {
+    final legs = ((it['legs'] as List?) ?? []).whereType<Map<String, dynamic>>().map(_leg).whereType<Leg>().toList();
+    if (legs.isEmpty || legs.any((l) => !l.isWalk)) continue;
+    out.add(Journey(source: 'transitous', legs: legs, dticket: true));
   }
   return out;
 }

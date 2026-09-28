@@ -7,7 +7,7 @@ import 'source.dart';
 
 const _base = 'https://global.api.flixbus.com';
 
-typedef FlixCity = ({String id, String name, double? lat, double? lon});
+typedef FlixCity = ({String id, String name, double? lat, double? lon, bool hasTrain});
 
 /// Flix works with cities, not stations: "Berlin Hbf" -> "Berlin".
 String flixCityQuery(String name) {
@@ -41,8 +41,9 @@ class FlixSource implements Source {
   @override
   bool get corsFriendly => true;
 
-  Future<FlixCity> _city(Place place) async {
-    final q = flixCityQuery(place.name);
+  /// All Flix cities matching a name, closest to [lat]/[lon] first.
+  Future<List<FlixCity>> cities(String name, {double? lat, double? lon}) async {
+    final q = flixCityQuery(name);
     final res = await cache.get('flix:city:$q', const Duration(hours: 24), () {
       return Net.instance.getJson(
         Uri.parse('$_base/search/autocomplete/cities')
@@ -55,59 +56,64 @@ class FlixSource implements Source {
         .whereType<Map<String, dynamic>>()
         .map<FlixCity>((c) {
           final l = (c['location'] ?? c['coordinates']) as Map?;
+          final stations = (c['stations'] as List?)?.whereType<Map>() ?? const [];
           return (
             id: (c['id'] ?? c['uuid'] ?? '').toString(),
             name: (c['name'] ?? '').toString(),
             lat: ((l?['lat'] ?? l?['latitude']) as num?)?.toDouble(),
             lon: ((l?['lon'] ?? l?['longitude']) as num?)?.toDouble(),
+            hasTrain: c['has_train_station'] == true || stations.any((st) => st['is_train'] == true),
           );
         })
         .where((c) => c.id.isNotEmpty)
         .toList();
-    if (list.isEmpty) throw SourceException('Flix has no city matching "$q"');
-    if (place.hasCoords) {
-      list.sort((a, b) => distKm(place.lat, place.lon, a.lat, a.lon).compareTo(distKm(place.lat, place.lon, b.lat, b.lon)));
-      if (list.first.lat != null && distKm(place.lat, place.lon, list.first.lat, list.first.lon) > 40) {
-        throw SourceException('no Flix stop near ${place.name}');
-      }
+    if (lat != null && lon != null) {
+      list.sort((a, b) => distKm(lat, lon, a.lat, a.lon).compareTo(distKm(lat, lon, b.lat, b.lon)));
     }
-    return list.first;
+    return list;
   }
 
-  @override
-  Future<List<Journey>> journeys(Place from, Place to, SearchOptions opts) async {
-    if (opts.dticketOnly) return []; // Flix never accepts the Deutschlandticket
-    final cities = await Future.wait([_city(from), _city(to)]);
-    final params = {
-      'from_city_id': cities[0].id,
-      'to_city_id': cities[1].id,
-      'departure_date': _ddmmyyyy(opts.when),
+  /// The Flix city serving [place], or null if Flix has no stop within [maxKm].
+  Future<FlixCity?> cityFor(Place place, {double maxKm = 40, bool trainOnly = false}) async {
+    final list = (await cities(place.name, lat: place.lat, lon: place.lon)).where((c) => !trainOnly || c.hasTrain).toList();
+    if (list.isEmpty) return null;
+    final c = list.first;
+    if (place.hasCoords && c.lat != null && distKm(place.lat, place.lon, c.lat, c.lon) > maxKm) return null;
+    return c;
+  }
+
+  /// All Flix rides between two cities on the calendar day of [day] (Europe/Berlin).
+  Future<List<Journey>> ridesOnDay(FlixCity from, FlixCity to, DateTime day, SearchOptions opts) async {
+    final p = {
+      'from_city_id': from.id,
+      'to_city_id': to.id,
+      'departure_date': _ddmmyyyy(day),
       'products': '{"adult":1}',
       'currency': 'EUR',
       'locale': 'de',
       'search_by': 'cities',
       'include_after_midnight_rides': '1',
     };
-    Future<List<Journey>> day(DateTime d) async {
-      final p = {...params, 'departure_date': _ddmmyyyy(d)};
-      final data = await cache.get('flix:${Uri(queryParameters: p).query}', const Duration(minutes: 2), () {
-        return Net.instance.getJson(
-          Uri.parse('$_base/search/service/v4/search').replace(queryParameters: p),
-          timeout: const Duration(seconds: 12),
-        );
-      });
-      return parseFlixSearch(data as Map<String, dynamic>, cities[0], cities[1], opts);
-    }
+    final data = await cache.get('flix:${Uri(queryParameters: p).query}', const Duration(minutes: 3), () {
+      return Net.instance.getJson(
+        Uri.parse('$_base/search/service/v4/search').replace(queryParameters: p),
+        timeout: const Duration(seconds: 12),
+      );
+    });
+    return parseFlixSearch(data as Map<String, dynamic>, from, to, opts);
+  }
 
+  /// Rides around [opts.when]; late in the day this also looks at the next (or, arriving, previous) day.
+  Future<List<Journey>> ridesAround(FlixCity from, FlixCity to, SearchOptions opts, {int? limit}) async {
     final t = opts.when;
-    final all = await day(t);
-    // Flix searches whole days: late in the evening, also look at tomorrow (or yesterday for arrive-by).
+    final n = limit ?? opts.results;
+    final all = await ridesOnDay(from, to, t, opts);
     final enough = opts.arriveBy
-        ? all.where((j) => !j.arrival.isAfter(t)).length >= opts.results
-        : all.where((j) => !j.departure.isBefore(t)).length >= opts.results;
+        ? all.where((j) => !j.arrival.isAfter(t)).length >= n
+        : all.where((j) => !j.departure.isBefore(t)).length >= n;
     if (!enough) {
       try {
-        all.addAll(await day(t.add(Duration(days: opts.arriveBy ? -1 : 1))));
+        all.addAll(await ridesOnDay(from, to, t.add(Duration(days: opts.arriveBy ? -1 : 1)), opts));
       } on SourceException {
         /* the first day's results are still useful */
       }
@@ -115,9 +121,18 @@ class FlixSource implements Source {
     all.sort((a, b) => a.departure.compareTo(b.departure));
     if (opts.arriveBy) {
       final before = all.where((j) => !j.arrival.isAfter(t)).toList();
-      return before.sublist((before.length - opts.results).clamp(0, before.length));
+      return before.sublist((before.length - n).clamp(0, before.length));
     }
-    return all.where((j) => !j.departure.isBefore(t.subtract(const Duration(minutes: 15)))).take(opts.results).toList();
+    return all.where((j) => !j.departure.isBefore(t.subtract(const Duration(minutes: 15)))).take(n).toList();
+  }
+
+  @override
+  Future<List<Journey>> journeys(Place from, Place to, SearchOptions opts) async {
+    if (opts.dticketOnly) return []; // Flix never accepts the Deutschlandticket
+    final cities = await Future.wait([cityFor(from, trainOnly: !opts.coach), cityFor(to, trainOnly: !opts.coach)]);
+    // No Flix stop at one end is not an error: the Flix+feeder search (services/flix_combos.dart) covers that.
+    if (cities[0] == null || cities[1] == null || cities[0]!.id == cities[1]!.id) return [];
+    return ridesAround(cities[0]!, cities[1]!, opts);
   }
 }
 

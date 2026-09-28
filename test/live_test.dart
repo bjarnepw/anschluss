@@ -49,4 +49,23 @@ void main() {
     print(l.map((p) => '${p.name} db=${p.dbId} tr=${p.transitousId}').join('\n'));
     expect(l, isNotEmpty);
   });
+
+  test('Flix combos where the start has no Flix stop', () async {
+    const salzwedel = Place(name: 'Salzwedel', lat: 52.8516, lon: 11.1592);
+    const koeln = Place(name: 'Köln Hbf', lat: 50.9430, lon: 6.9589);
+    const pasewalk = Place(name: 'Pasewalk', lat: 53.5049, lon: 13.9849);
+    for (final to in [koeln, pasewalk]) {
+      final when = DateTime.now().add(const Duration(hours: 12));
+      SearchResult? last;
+      await for (final r in searchJourneys(salzwedel, to, SearchOptions(when: when, results: 8), sources.keys.toList())) {
+        last = r;
+      }
+      // ignore: avoid_print
+      print('--- Salzwedel → ${to.name}: ${last!.status.map((k, v) => MapEntry(k, '${v.state.name} ${v.count} ${v.error ?? ''}'))}');
+      for (final j in last.journeys) {
+        // ignore: avoid_print
+        print('${j.sources.contains('flix') ? 'FLIX ' : '     '}${fmt(j)}');
+      }
+    }
+  }, timeout: const Timeout(Duration(minutes: 3)));
 }

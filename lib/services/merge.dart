@@ -2,7 +2,7 @@
 // that carries every price and the best map geometry available. Then ranks them.
 import '../models/journey.dart';
 
-const _priority = {'db': 0, 'oebb': 1, 'transitous': 2, 'flix': 3}; // whose leg details win (realtime, platforms)
+const _priority = {'db': 0, 'oebb': 1, 'transitous': 2, 'flix': 3, 'flixcombo': 4}; // whose leg details win (realtime, platforms)
 
 String _minute(DateTime d) => d.toUtc().toIso8601String().substring(0, 16);
 
@@ -107,7 +107,7 @@ List<Journey> mergeJourneys(Iterable<List<Journey>> lists) {
   return merged;
 }
 
-double? effectivePrice(Journey j, bool dticket) => dticket && j.dticket ? 0 : j.bestPrice?.amount;
+double? effectivePrice(Journey j, bool dticket) => j.walkOnly || (dticket && j.dticket) ? 0 : j.bestPrice?.amount;
 
 /// "Best" = travel time + transfer penalty + money + waiting + transfer risk, all in minutes.
 List<Journey> rankJourneys(
