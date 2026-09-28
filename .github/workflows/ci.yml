@@ -119,13 +119,30 @@ jobs:
         shell: bash
         run: |
           flutter pub get
+          # Release files get readable names: anschluss-<version>-<platform>…
+          v="${GITHUB_REF_NAME}"; [[ "${{ github.ref_type }}" == tag ]] || v="dev-${GITHUB_SHA::7}"
+          mkdir -p dist
           case "${{ matrix.platform }}" in
-            android) flutter build apk --release --split-per-abi ;;
-            linux)   flutter build linux --release && tar -C build/linux/x64/release/bundle -czf anschluss-linux-x64.tar.gz . ;;
-            web)     flutter build web --release --base-href /anschluss/ ;;
-            ios)     flutter build ios --release --no-codesign ;;
-            macos)   flutter build macos --release ;;
+            android)
+              flutter build apk --release --split-per-abi
+              for f in build/app/outputs/flutter-apk/app-*-release.apk; do
+                abi=$(basename "$f" | sed -E 's/app-(.*)-release.apk/\1/')
+                cp "$f" "dist/anschluss-$v-android-$abi.apk"
+              done ;;
+            linux)
+              flutter build linux --release
+              tar -C build/linux/x64/release/bundle -czf "dist/anschluss-$v-linux-x64.tar.gz" . ;;
+            web)
+              flutter build web --release --base-href /anschluss/
+              (cd build/web && zip -qr "$GITHUB_WORKSPACE/dist/anschluss-$v-web.zip" .) ;;
+            ios)
+              flutter build ios --release --no-codesign
+              (cd build/ios/iphoneos && zip -qry "$GITHUB_WORKSPACE/dist/anschluss-$v-ios-unsigned.zip" Runner.app) ;;
+            macos)
+              flutter build macos --release
+              ditto -c -k --keepParent build/macos/Build/Products/Release/*.app "dist/anschluss-$v-macos.zip" ;;
           esac
+          ls -la dist
 
       - uses: actions/upload-artifact@v5
         if: steps.gate.outputs.run == 'true'
@@ -133,9 +150,35 @@ jobs:
           name: anschluss-${{ matrix.platform }}
           retention-days: 14
           if-no-files-found: error
-          path: |
-            ${{ matrix.platform == 'android' && 'build/app/outputs/flutter-apk/*.apk' || '' }}
-            ${{ matrix.platform == 'linux' && 'anschluss-linux-x64.tar.gz' || '' }}
-            ${{ matrix.platform == 'web' && 'build/web' || '' }}
-            ${{ matrix.platform == 'ios' && 'build/ios/iphoneos/Runner.app' || '' }}
-            ${{ matrix.platform == 'macos' && 'build/macos/Build/Products/Release/*.app' || '' }}
+          path: dist/*
+
+  # Tag v* → GitHub release with all builds attached. The tag's message is the release text.
+  release:
+    name: Publish release
+    needs: build
+    if: ${{ github.ref_type == 'tag' && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v5
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Release notes
+        run: |
+          git fetch -f origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > notes.md
+          prev=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          { echo; echo "### Commits"; git log --format='- %s' ${prev:+$prev..}"$GITHUB_REF_NAME"; } >> notes.md
+          cat notes.md
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la dist
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Anschluss $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
