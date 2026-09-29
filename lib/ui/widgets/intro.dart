@@ -130,6 +130,13 @@ class _IntroState extends State<_Intro> {
             ? 'Alle gefundenen Verbindungen sind blass eingezeichnet – tippe eine Linie an, um sie auszuwählen.'
             : 'All connections found are drawn faded – tap a line to select it.',
       ),
+      _point(
+        Icons.pin_drop_outlined,
+        s.de ? 'Bahnhöfe auf der Karte' : 'Stations on the map',
+        s.de
+            ? 'Tippe auf einen Bahnhof (oder drücke lange irgendwo) → „Von hier“, „Nach hier“ oder „Zwischenhalt“.'
+            : 'Tap a station (or long-press anywhere) → “From here”, “To here” or “Stop”.',
+      ),
     ]);
   }
 

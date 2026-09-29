@@ -8,6 +8,7 @@ import '../app_scope.dart';
 import '../../core/tiles/tile_cache.dart';
 import '../../offline/offline_pack.dart';
 import '../line_colors.dart';
+import '../widgets/route_map.dart';
 import '../widgets/intro.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -271,6 +272,22 @@ class SettingsScreen extends StatelessWidget {
             onChanged: (v) => set(st.copyWith(amoled: v)),
           ),
           const _ColorSettings(),
+          if (RouteMap.vectorSupported)
+            ListTile(
+              leading: const Icon(Icons.map_outlined),
+              title: Text(s.de ? 'Kartenstil' : 'Map style'),
+              subtitle: Text(s.de ? 'Im dunklen Design gibt es einen eigenen dunklen Stil.' : 'Dark mode uses its own dark style.'),
+              trailing: DropdownButton<int>(
+                value: st.mapStyle,
+                underline: const SizedBox.shrink(),
+                items: [
+                  DropdownMenuItem(value: 0, child: Text(s.de ? 'Bunt' : 'Colourful')),
+                  DropdownMenuItem(value: 1, child: Text(s.de ? 'Hell' : 'Bright')),
+                  DropdownMenuItem(value: 2, child: Text(s.de ? 'Schlicht' : 'Minimal')),
+                ],
+                onChanged: (v) => v == null ? null : set(st.copyWith(mapStyle: v)),
+              ),
+            ),
           ListTile(
             title: Text(s.language),
             trailing: SegmentedButton<AppLanguage>(
@@ -342,6 +359,14 @@ class SettingsScreen extends StatelessWidget {
                 onChanged: (v) => set(st.copyWith(webProxy: v.trim())),
               ),
             ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+            child: Text(
+              'Anschluss $appVersion',
+              textAlign: TextAlign.center,
+              style: t.labelMedium?.copyWith(color: Theme.of(context).colorScheme.outline),
+            ),
+          ),
         ],
       ),
     );

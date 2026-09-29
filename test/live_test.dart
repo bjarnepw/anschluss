@@ -4,6 +4,7 @@ library;
 
 import 'package:anschluss/models/journey.dart';
 import 'package:anschluss/services/search.dart';
+import 'package:anschluss/services/via_search.dart';
 import 'package:anschluss/sources/source.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -106,4 +107,24 @@ void main() {
     expect(last.journeys, isNotEmpty);
     expect(last.journeys.first.legs.first.isWalk, isTrue);
   });
+
+  test('search with a stopover', () async {
+    const potsdam = Place(name: 'Potsdam Hbf', lat: 52.3917, lon: 13.0664);
+    SearchResult? last;
+    await for (final r in searchWithVias(
+      potsdam,
+      [berlin],
+      hamburg,
+      SearchOptions(when: DateTime.now().add(const Duration(hours: 12))),
+      ['db', 'transitous'],
+    )) {
+      last = r;
+    }
+    for (final j in last!.journeys.take(4)) {
+      // ignore: avoid_print
+      print('${fmt(j)}  via: ${j.legs.where((l) => !l.isWalk).map((l) => '${l.line}(${l.from.name}→${l.to.name})').join(' / ')}');
+    }
+    expect(last.journeys, isNotEmpty);
+    expect(last.journeys.first.transit.any((l) => l.to.name.contains('Berlin')), isTrue);
+  }, timeout: const Timeout(Duration(minutes: 2)));
 }

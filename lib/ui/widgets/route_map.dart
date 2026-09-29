@@ -24,7 +24,11 @@ class RouteMap extends StatelessWidget {
   final ValueChanged<Journey>? onGeometry;
   final (double, double)? expected;
 
+  /// Tap on a station symbol ([place] set) or long press anywhere ([place] null).
+  final void Function(Place? place, double lat, double lon)? onPlaceTap;
+
   const RouteMap({
+    this.onPlaceTap,
     super.key,
     required this.journey,
     this.others = const [],
@@ -50,6 +54,7 @@ class RouteMap extends StatelessWidget {
           rounded: rounded,
           onGeometry: onGeometry,
           expected: expected,
+          onPlaceTap: onPlaceTap,
         )
       : RasterRouteMap(
           journey: journey,
@@ -60,6 +65,7 @@ class RouteMap extends StatelessWidget {
           rounded: rounded,
           onGeometry: onGeometry,
           expected: expected,
+          onPlaceTap: onPlaceTap,
         );
 }
 
@@ -81,7 +87,10 @@ class RasterRouteMap extends StatefulWidget {
   /// Where you should be right now according to the timetable (live analysis) – drawn as a ring.
   final (double, double)? expected;
 
+  final void Function(Place? place, double lat, double lon)? onPlaceTap;
+
   const RasterRouteMap({
+    this.onPlaceTap,
     this.onGeometry,
     this.expected,
     super.key,
@@ -327,6 +336,7 @@ class _RouteMapState extends State<RasterRouteMap> {
             ? CameraFit.coordinates(coordinates: pts, padding: _fitPadding, maxZoom: 15)
             : null,
         onMapReady: () => _ready = true,
+        onLongPress: widget.onPlaceTap == null ? null : (_, p) => widget.onPlaceTap!(null, p.latitude, p.longitude),
         interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
       ),
       children: [

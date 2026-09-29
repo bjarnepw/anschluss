@@ -2,6 +2,7 @@
 // style – like OsmAnd. Desktop keeps the raster map (MapLibre has no Linux/macOS/Windows support).
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' as ml;
 import 'package:url_launcher/url_launcher.dart';
@@ -12,9 +13,8 @@ import '../../services/location.dart';
 import '../app_scope.dart';
 import '../line_colors.dart';
 import 'intro.dart';
+import 'map_styles.dart';
 
-const _styleLight = 'https://tiles.openfreemap.org/styles/liberty';
-const _styleDark = 'https://tiles.openfreemap.org/styles/dark';
 const _railTiles = 'https://tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png';
 
 String _hex(Color c) => '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}';
@@ -29,7 +29,11 @@ class VectorRouteMap extends StatefulWidget {
   final ValueChanged<Journey>? onGeometry;
   final (double, double)? expected;
 
+  /// Tap on a station symbol ([place] set) or long press anywhere ([place] null) at [lat]/[lon].
+  final void Function(Place? place, double lat, double lon)? onPlaceTap;
+
   const VectorRouteMap({
+    this.onPlaceTap,
     super.key,
     required this.journey,
     this.others = const [],
@@ -48,6 +52,10 @@ class VectorRouteMap extends StatefulWidget {
 class _VectorRouteMapState extends State<VectorRouteMap> {
   ml.MapLibreMapController? _ctrl;
   bool _styleReady = false;
+  // On the web the style can finish loading before the controller exists; set up when both are there.
+  bool _stylePending = false;
+  Future<String>? _style;
+  String _styleKey = '';
   bool _rail = false;
   String _dataKey = '';
   Brightness? _styleFor;
@@ -200,7 +208,8 @@ class _VectorRouteMapState extends State<VectorRouteMap> {
         for (final p in widget.pins.where((p) => p.hasCoords)) [p.lat!, p.lon!],
     ];
     if (pts.isEmpty) return;
-    final pad = widget.padding + const EdgeInsets.all(48);
+    // Keep clear of the button column on the right.
+    final pad = widget.padding + const EdgeInsets.fromLTRB(48, 48, 48 + 56, 48);
     if (pts.length == 1 || pts.every((p) => p[0] == pts.first[0] && p[1] == pts.first[1])) {
       await c.animateCamera(ml.CameraUpdate.newLatLngZoom(ml.LatLng(pts.first[0], pts.first[1]), 13));
       return;
@@ -220,9 +229,28 @@ class _VectorRouteMapState extends State<VectorRouteMap> {
 
   // ---------------------------------------------------------------- style setup
 
+  void _onCreated(ml.MapLibreMapController c) {
+    _ctrl = c;
+    if (_stylePending) {
+      _stylePending = false;
+      _onStyleLoaded();
+    }
+  }
+
   Future<void> _onStyleLoaded() async {
     final c = _ctrl;
-    if (c == null) return;
+    if (c == null) {
+      _stylePending = true;
+      return;
+    }
+    try {
+      await _setupLayers(c);
+    } catch (e) {
+      debugPrint('vector map: layer setup failed: $e');
+    }
+  }
+
+  Future<void> _setupLayers(ml.MapLibreMapController c) async {
     final cs = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
     for (final id in ['faded', 'route', 'points', 'expected']) {
@@ -330,19 +358,40 @@ class _VectorRouteMapState extends State<VectorRouteMap> {
     } catch (_) {}
   }
 
-  Future<void> _onTap(Point<double> p, ml.LatLng _) async {
+  Future<void> _onTap(Point<double> p, ml.LatLng at) async {
     final c = _ctrl;
-    if (c == null || widget.onSelect == null) return;
-    final hits = await c.queryRenderedFeaturesInRect(Rect.fromCenter(center: Offset(p.x, p.y), width: 28, height: 28), [
-      'faded-solid',
-      'faded-dashed',
-    ], null);
-    for (final h in hits) {
-      final props = h is Map ? h['properties'] : null;
-      final id = props is Map ? props['jid'] as String? : null;
-      final j = widget.others.where((o) => o.id == id).firstOrNull;
-      if (j != null) {
-        widget.onSelect!(j);
+    if (c == null) return;
+    final rect = Rect.fromCenter(center: Offset(p.x, p.y), width: 28, height: 28);
+    // 1) A faded alternative → select it.
+    if (widget.onSelect != null) {
+      for (final h in await c.queryRenderedFeaturesInRect(rect, ['faded-solid', 'faded-dashed'], null)) {
+        final props = h is Map ? h['properties'] : null;
+        final id = props is Map ? props['jid'] as String? : null;
+        final j = widget.others.where((o) => o.id == id).firstOrNull;
+        if (j != null) {
+          widget.onSelect!(j);
+          return;
+        }
+      }
+    }
+    // 2) A station symbol of the base map (OpenMapTiles poi/transit features) → offer it as start/destination.
+    if (widget.onPlaceTap != null) {
+      for (final h in await c.queryRenderedFeaturesInRect(rect, const [], null)) {
+        if (h is! Map) continue;
+        final props = h['properties'];
+        if (props is! Map) continue;
+        final cls = '${props['class'] ?? ''}';
+        final sub = '${props['subclass'] ?? ''}';
+        final isStation =
+            const {'railway', 'bus', 'tram', 'subway', 'light_rail', 'ferry_terminal'}.contains(cls) ||
+            const {'station', 'halt', 'tram_stop', 'bus_stop', 'subway_entrance'}.contains(sub);
+        final name = (props['name:de'] ?? props['name'])?.toString();
+        if (!isStation || name == null || name.isEmpty) continue;
+        final geom = h['geometry'];
+        final coords = geom is Map ? geom['coordinates'] : null;
+        final lat = coords is List && coords.length >= 2 && coords[1] is num ? (coords[1] as num).toDouble() : at.latitude;
+        final lon = coords is List && coords.length >= 2 && coords[0] is num ? (coords[0] as num).toDouble() : at.longitude;
+        widget.onPlaceTap!(Place(name: name, lat: lat, lon: lon), lat, lon);
         return;
       }
     }
@@ -370,22 +419,34 @@ class _VectorRouteMapState extends State<VectorRouteMap> {
     _styleFor = b;
     final hasLocation = _loc.position.value != null;
 
-    final map = ml.MapLibreMap(
-      styleString: b == Brightness.dark ? _styleDark : _styleLight,
-      initialCameraPosition: const ml.CameraPosition(target: ml.LatLng(51.1, 10.4), zoom: 5.2),
-      onMapCreated: (c) => _ctrl = c,
-      onStyleLoadedCallback: _onStyleLoaded,
-      onMapClick: _onTap,
-      myLocationEnabled: hasLocation,
-      myLocationRenderMode: ml.MyLocationRenderMode.normal,
-      myLocationTrackingMode: ml.MyLocationTrackingMode.none,
-      compassEnabled: true,
-      compassViewMargins: Point(widget.padding.right + 16, widget.padding.top + 220),
-      rotateGesturesEnabled: true,
-      tiltGesturesEnabled: false,
-      logoEnabled: false,
-      attributionButtonMargins: const Point(-100, -100), // replaced by the always-visible text below
-      trackCameraPosition: false,
+    final st = context.store.settings;
+    final styleKey = '${st.mapStyle}|${b.name}|${st.language.name}';
+    if (styleKey != _styleKey) {
+      _styleKey = styleKey;
+      _style = loadStyle(MapStyle.values[st.mapStyle.clamp(0, 2)], b == Brightness.dark, st.language.name);
+    }
+    final map = FutureBuilder<String>(
+      future: _style,
+      builder: (context, snap) => !snap.hasData
+          ? ColoredBox(color: cs.surfaceContainerHighest)
+          : ml.MapLibreMap(
+              styleString: snap.data!,
+              initialCameraPosition: const ml.CameraPosition(target: ml.LatLng(51.1, 10.4), zoom: 5.2),
+              onMapCreated: _onCreated,
+              onStyleLoadedCallback: _onStyleLoaded,
+              onMapClick: _onTap,
+              onMapLongClick: widget.onPlaceTap == null ? null : (p, at) => widget.onPlaceTap!(null, at.latitude, at.longitude),
+              myLocationEnabled: hasLocation,
+              myLocationRenderMode: ml.MyLocationRenderMode.normal,
+              myLocationTrackingMode: ml.MyLocationTrackingMode.none,
+              compassEnabled: !kIsWeb, // on the web it would sit on top of our own controls
+              compassViewMargins: Point(widget.padding.right + 16, widget.padding.top + 220),
+              rotateGesturesEnabled: true,
+              tiltGesturesEnabled: false,
+              logoEnabled: false,
+              attributionButtonPosition: ml.AttributionButtonPosition.bottomLeft,
+              trackCameraPosition: false,
+            ),
     );
 
     final controls = Positioned(
@@ -419,7 +480,8 @@ class _VectorRouteMapState extends State<VectorRouteMap> {
       child: _VectorAttribution(rail: _rail),
     );
 
-    final stack = Stack(children: [map, controls, attribution]);
+    // The web map shows its own (compliant) attribution; the apps show ours.
+    final stack = Stack(children: [map, controls, if (!kIsWeb) attribution]);
     return widget.rounded ? ClipRRect(borderRadius: BorderRadius.circular(16), child: stack) : stack;
   }
 }

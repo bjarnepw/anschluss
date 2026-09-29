@@ -1,6 +1,7 @@
 import 'package:anschluss/models/journey.dart';
 import 'package:anschluss/models/settings.dart';
 import 'package:anschluss/services/merge.dart';
+import 'package:anschluss/services/via_search.dart';
 import 'package:anschluss/ui/line_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -165,5 +166,27 @@ void main() {
       expect(back.legs.single.line, 'RE 1');
       expect(back.bestPrice!.amount, 9);
     });
+  });
+
+  test('stopover journeys are joined with prices added up', () {
+    final a = Journey(
+      source: 'db',
+      dticket: false,
+      legs: [leg('RE 1', Mode.regional, 0, 30, to: 'V')],
+      prices: [const Price(amount: 10, source: 'db')],
+    );
+    final b = Journey(
+      source: 'transitous',
+      dticket: true,
+      legs: [leg('S 2', Mode.suburban, 40, 60, from: 'V')],
+      prices: [const Price(amount: 4.5, source: 'db')],
+    );
+    final j = joinJourneys(a, b);
+    expect(j.legs.map((l) => l.line), ['RE 1', 'S 2']);
+    expect(j.duration, 60);
+    expect(j.transfers, 1);
+    expect(j.bestPrice!.amount, 14.5);
+    expect(j.bestPrice!.partial, isTrue);
+    expect(j.sources, containsAll(['db', 'transitous']));
   });
 }

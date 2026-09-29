@@ -36,6 +36,9 @@ class Settings {
   /// Pure black backgrounds in dark mode (AMOLED).
   final bool amoled;
 
+  /// Vector map style: 0 = Liberty (colourful), 1 = Bright, 2 = Positron (calm). Dark mode has its own style.
+  final int mapStyle;
+
   /// Use the Android system colours (Material You) when available.
   final bool dynamicColor;
 
@@ -86,6 +89,7 @@ class Settings {
     this.defaultSort = SortMode.best,
     this.themeMode = 0,
     this.amoled = false,
+    this.mapStyle = 0,
     this.dynamicColor = true,
     this.seedColor = 0xFF0B6E4F,
     this.language = AppLanguage.de,
@@ -115,6 +119,7 @@ class Settings {
     SortMode? defaultSort,
     int? themeMode,
     bool? amoled,
+    int? mapStyle,
     bool? dynamicColor,
     int? seedColor,
     AppLanguage? language,
@@ -142,6 +147,7 @@ class Settings {
     defaultSort: defaultSort ?? this.defaultSort,
     themeMode: themeMode ?? this.themeMode,
     amoled: amoled ?? this.amoled,
+    mapStyle: mapStyle ?? this.mapStyle,
     dynamicColor: dynamicColor ?? this.dynamicColor,
     seedColor: seedColor ?? this.seedColor,
     language: language ?? this.language,
@@ -171,6 +177,7 @@ class Settings {
     'defaultSort': defaultSort.name,
     'themeMode': themeMode,
     'amoled': amoled,
+    'mapStyle': mapStyle,
     'dynamicColor': dynamicColor,
     'seedColor': seedColor,
     'language': language.name,
@@ -203,6 +210,7 @@ class Settings {
       defaultSort: SortMode.values.firstWhere((s) => s.name == j['defaultSort'], orElse: () => d.defaultSort),
       themeMode: pick('themeMode', d.themeMode).clamp(0, 2),
       amoled: pick('amoled', d.amoled),
+      mapStyle: pick('mapStyle', d.mapStyle).clamp(0, 2),
       dynamicColor: pick('dynamicColor', d.dynamicColor),
       seedColor: pick('seedColor', d.seedColor),
       language: AppLanguage.values.firstWhere((s) => s.name == j['language'], orElse: () => d.language),

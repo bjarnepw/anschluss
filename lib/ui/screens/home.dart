@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/net.dart';
+import '../../core/util.dart';
 import '../../models/journey.dart';
 import '../../models/settings.dart';
 import '../../services/merge.dart';
 import '../../services/search.dart';
+import '../../services/via_search.dart';
 import '../../services/store.dart';
 import '../../sources/source.dart';
 import '../app_scope.dart';
@@ -33,6 +35,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   Place? _from, _to;
+  final _vias = <Place>[]; // stopovers
   DateTime? _when; // null = now
   bool _arriveBy = false;
   SortMode? _sort;
@@ -52,6 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // The sheet must get identical snap sizes on every rebuild: a new list makes it re-snap (and
   // fight the finger) each time the screen rebuilds. Computed once per screen height.
   double? _sheetHeight;
+  int _snapVias = -1;
   double _peekFraction = 0.25;
   List<double> _snaps = const [0.25, _halfFraction, _fullFraction];
 
@@ -94,6 +98,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _from = r.from;
       _to = r.to;
+      _vias.clear();
       _when = null;
     });
     _search();
@@ -204,8 +209,16 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_sheet.isAttached && _sheet.size < _halfFraction) _moveSheet(_halfFraction);
     final opts = SearchOptions.from(settings, when, arriveBy: direction);
     SearchResult? last;
-    _sub = searchJourneys(from, to, opts, settings.sources, hideTight: settings.hideTightTransfers, offlineOnly: settings.offlineOnly)
-        .listen(
+    _sub =
+        searchWithVias(
+          from,
+          [..._vias],
+          to,
+          opts,
+          settings.sources,
+          hideTight: settings.hideTightTransfers,
+          offlineOnly: settings.offlineOnly,
+        ).listen(
           (snapshot) {
             var r = snapshot;
             if (keep) {
@@ -351,7 +364,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final wide = c.maxWidth >= 900;
         final media = MediaQuery.of(context);
         final topInset = media.padding.top;
-        final pins = [?_from, ?_to];
+        final pins = [?_from, ..._vias, ?_to];
 
         if (!wide) _ensureSnaps(c.maxHeight, media.viewPadding.bottom);
         final trip = store.activeTrip;
@@ -364,6 +377,7 @@ class _HomeScreenState extends State<HomeScreen> {
               journey: _mapJourney,
               others: _result?.journeys ?? const [],
               onSelect: (j) => _tapJourney(j, wide),
+              onPlaceTap: _onPlaceTap,
               pins: pins,
               padding: wide
                   ? EdgeInsets.only(left: 472, top: topInset)
@@ -464,9 +478,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _ensureSnaps(double height, double bottomInset) {
-    if (_sheetHeight == height) return;
+    // Recomputed only when the screen height or the number of stopover rows changes.
+    if (_sheetHeight == height && _snapVias == _vias.length) return;
     _sheetHeight = height;
-    _peekFraction = ((_peekPx + bottomInset) / height).clamp(0.12, 0.45);
+    _snapVias = _vias.length;
+    _peekFraction = ((_peekPx + 45 * _vias.length + bottomInset) / height).clamp(0.12, 0.45);
     _snaps = List.unmodifiable([_peekFraction, _halfFraction, _fullFraction]);
   }
 
@@ -697,6 +713,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   children: [
                     stationRow(_from, true),
+                    for (var i = 0; i < _vias.length; i++) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(left: 32, right: 4),
+                        child: Divider(height: 1, color: cs.outlineVariant),
+                      ),
+                      _viaRow(context, i),
+                    ],
                     Padding(
                       padding: const EdgeInsets.only(left: 32, right: 4),
                       child: Divider(height: 1, color: cs.outlineVariant),
@@ -728,7 +751,12 @@ class _HomeScreenState extends State<HomeScreen> {
               onToggle: () => setState(() => _arriveBy = !_arriveBy),
               onReset: when == null ? null : () => setState(() => _when = null),
             ),
-            const SizedBox(width: 8),
+            IconButton.filledTonal(
+              tooltip: s.de ? 'Zwischenhalt hinzufügen' : 'Add a stop',
+              icon: const Icon(Icons.add_location_alt_outlined),
+              onPressed: _vias.length >= 3 ? null : _addVia,
+            ),
+            const SizedBox(width: 4),
             Expanded(
               child: FilledButton.icon(
                 onPressed: _searching ? null : _search,
@@ -743,6 +771,93 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ],
     );
+  }
+
+  Widget _viaRow(BuildContext context, int i) {
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).textTheme;
+    return SizedBox(
+      height: 44,
+      child: Row(
+        children: [
+          SizedBox(width: 32, child: Icon(Icons.more_vert, size: 20, color: cs.onSurfaceVariant)),
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () async {
+                final p = await Navigator.push<Place>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => StationPicker(title: context.s.de ? 'Zwischenhalt' : 'Stop', initial: _vias[i].name),
+                  ),
+                );
+                if (p != null && mounted) setState(() => _vias[i] = p);
+              },
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _vias[i].name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: context.s.de ? 'Zwischenhalt entfernen' : 'Remove stop',
+            icon: const Icon(Icons.close, size: 18),
+            onPressed: () => setState(() => _vias.removeAt(i)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addVia() async {
+    final p = await Navigator.push<Place>(
+      context,
+      MaterialPageRoute(builder: (_) => StationPicker(title: context.s.de ? 'Zwischenhalt' : 'Stop')),
+    );
+    if (p != null && mounted) setState(() => _vias.add(p));
+  }
+
+  /// Station tapped on the map (or long press): start, destination or stopover from here.
+  Future<void> _onPlaceTap(Place? place, double lat, double lon) async {
+    final s = context.s;
+    HapticFeedback.selectionClick();
+    final choice = await showModalBottomSheet<(Place, String)>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => _PlaceSheet(place: place, lat: lat, lon: lon),
+    );
+    if (choice == null || !mounted) return;
+    final (p, role) = choice;
+    setState(() {
+      switch (role) {
+        case 'from':
+          _from = p;
+        case 'to':
+          _to = p;
+        default:
+          if (_vias.length < 3) _vias.add(p);
+      }
+      _selectedId = null;
+    });
+    if (_from != null && _to != null) {
+      _search();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            role == 'from'
+                ? (s.de ? 'Jetzt ein Ziel wählen' : 'Now pick a destination')
+                : (s.de ? 'Jetzt einen Start wählen' : 'Now pick a start'),
+          ),
+        ),
+      );
+    }
   }
 
   Widget _quickRoutes(BuildContext context) {
@@ -941,6 +1056,110 @@ class _TripBar extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Bottom sheet for a place picked on the map: the station itself (resolved to a proper stop) or, after
+/// a long press, the stops nearby plus the exact point. Each can become start, destination or stopover.
+class _PlaceSheet extends StatefulWidget {
+  final Place? place;
+  final double lat, lon;
+  const _PlaceSheet({required this.place, required this.lat, required this.lon});
+
+  @override
+  State<_PlaceSheet> createState() => _PlaceSheetState();
+}
+
+class _PlaceSheetState extends State<_PlaceSheet> {
+  List<Place>? _near;
+
+  @override
+  void initState() {
+    super.initState();
+    transitousSource
+        .nearby(widget.lat, widget.lon)
+        .then((v) {
+          if (mounted) setState(() => _near = v.where((p) => p.isStop).take(widget.place == null ? 5 : 3).toList());
+        })
+        .catchError((_) {
+          if (mounted) setState(() => _near = const []);
+        });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.s;
+    final t = Theme.of(context).textTheme;
+    // A tapped map symbol: prefer the matching stop from Transitous (it has the ids the sources need).
+    final tapped = widget.place;
+    final match = tapped == null
+        ? null
+        : _near
+              ?.where((n) => n.name.toLowerCase().contains(tapped.name.toLowerCase().split(',').first) || placeDist(n, tapped) < 0.15)
+              .firstOrNull;
+    final entries = <Place>[
+      if (tapped != null) match ?? tapped,
+      if (tapped == null) ...[
+        Place(name: s.de ? 'Punkt auf der Karte' : 'Point on the map', lat: widget.lat, lon: widget.lon, kind: PlaceKind.place),
+        ...?_near,
+      ],
+    ];
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (tapped == null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(s.de ? 'Hier in der Nähe' : 'Nearby', style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+              ),
+            if (_near == null && tapped == null) const LinearProgressIndicator(),
+            for (final p in entries)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(p.isStop ? Icons.train_outlined : Icons.place_outlined),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(p.name, style: t.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        FilledButton.tonalIcon(
+                          icon: const Icon(Icons.trip_origin, size: 18),
+                          label: Text(s.de ? 'Von hier' : 'From here'),
+                          onPressed: () => Navigator.pop(context, (p, 'from')),
+                        ),
+                        FilledButton.tonalIcon(
+                          icon: const Icon(Icons.place, size: 18),
+                          label: Text(s.de ? 'Nach hier' : 'To here'),
+                          onPressed: () => Navigator.pop(context, (p, 'to')),
+                        ),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.add_location_alt_outlined, size: 18),
+                          label: Text(s.de ? 'Zwischenhalt' : 'Stop'),
+                          onPressed: () => Navigator.pop(context, (p, 'via')),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+          ],
         ),
       ),
     );
