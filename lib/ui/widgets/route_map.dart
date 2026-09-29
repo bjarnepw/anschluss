@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -10,12 +11,63 @@ import '../../services/location.dart';
 import '../app_scope.dart';
 import '../line_colors.dart';
 import 'intro.dart';
+import 'vector_map.dart';
+
+/// The map used everywhere: vector (MapLibre/OpenFreeMap) where supported, raster on desktop.
+class RouteMap extends StatelessWidget {
+  final Journey? journey;
+  final List<Journey> others;
+  final ValueChanged<Journey>? onSelect;
+  final List<Place> pins;
+  final EdgeInsets padding;
+  final bool rounded;
+  final ValueChanged<Journey>? onGeometry;
+  final (double, double)? expected;
+
+  const RouteMap({
+    super.key,
+    required this.journey,
+    this.others = const [],
+    this.onSelect,
+    this.pins = const [],
+    this.padding = EdgeInsets.zero,
+    this.rounded = true,
+    this.onGeometry,
+    this.expected,
+  });
+
+  static bool get vectorSupported =>
+      kIsWeb || defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS;
+
+  @override
+  Widget build(BuildContext context) => vectorSupported
+      ? VectorRouteMap(
+          journey: journey,
+          others: others,
+          onSelect: onSelect,
+          pins: pins,
+          padding: padding,
+          rounded: rounded,
+          onGeometry: onGeometry,
+          expected: expected,
+        )
+      : RasterRouteMap(
+          journey: journey,
+          others: others,
+          onSelect: onSelect,
+          pins: pins,
+          padding: padding,
+          rounded: rounded,
+          onGeometry: onGeometry,
+          expected: expected,
+        );
+}
 
 /// OSM map with the journey's legs drawn in their line colours. Dashed = straight line (no exact geometry).
 /// [padding] is the area covered by overlays (bottom sheet, side panel, status bar); fitting keeps the route
 /// inside the visible part and the map controls clear of it.
 /// [others] are drawn faded underneath the selected [journey]; tapping one calls [onSelect].
-class RouteMap extends StatefulWidget {
+class RasterRouteMap extends StatefulWidget {
   final Journey? journey;
   final List<Journey> others;
   final ValueChanged<Journey>? onSelect;
@@ -29,7 +81,7 @@ class RouteMap extends StatefulWidget {
   /// Where you should be right now according to the timetable (live analysis) – drawn as a ring.
   final (double, double)? expected;
 
-  const RouteMap({
+  const RasterRouteMap({
     this.onGeometry,
     this.expected,
     super.key,
@@ -42,10 +94,10 @@ class RouteMap extends StatefulWidget {
   });
 
   @override
-  State<RouteMap> createState() => _RouteMapState();
+  State<RasterRouteMap> createState() => _RouteMapState();
 }
 
-class _RouteMapState extends State<RouteMap> {
+class _RouteMapState extends State<RasterRouteMap> {
   final _ctrl = MapController();
   bool _rail = false;
   bool _ready = false;
@@ -96,7 +148,7 @@ class _RouteMapState extends State<RouteMap> {
   }
 
   @override
-  void didUpdateWidget(RouteMap old) {
+  void didUpdateWidget(RasterRouteMap old) {
     super.didUpdateWidget(old);
     // Move the camera only when what the user looks at changes (another connection, other stations) –
     // never because results stream in or the sheet moves; that made the map jump around.

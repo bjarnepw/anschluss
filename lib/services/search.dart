@@ -77,6 +77,7 @@ Stream<SearchResult> searchJourneys(
       merged = merged.where((j) => (j.tightestBuffer ?? 999) >= opts.minTransferMinutes).toList();
     }
     if (opts.maxTransfers != null) merged = merged.where((j) => j.transfers <= opts.maxTransfers!).toList();
+    merged = pruneImplausible(merged, from, to);
     // Walking the whole way: only show it when it can compete with the trains.
     final fastest = merged
         .where((j) => !j.walkOnly && !j.cancelled)

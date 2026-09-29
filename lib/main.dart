@@ -5,7 +5,7 @@ import 'offline/offline_pack.dart';
 import 'services/store.dart';
 import 'services/trip_updates.dart';
 import 'ui/app_scope.dart';
-import 'ui/screens/home.dart';
+import 'ui/screens/shell.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -74,7 +74,7 @@ class AnschlussApp extends StatelessWidget {
               theme: theme(light),
               darkTheme: theme(dark),
               themeMode: const [ThemeMode.system, ThemeMode.light, ThemeMode.dark][st.themeMode.clamp(0, 2)],
-              home: const HomeScreen(),
+              home: const AppShell(),
             );
           },
         ),

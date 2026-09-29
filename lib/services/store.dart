@@ -101,6 +101,17 @@ class AppStore extends ChangeNotifier {
 
   Settings settings = const Settings();
   List<SavedRoute> favorites = [];
+
+  /// Navigation between the tabs: which tab is shown, and a route the map tab should search right away
+  /// (e.g. a favourite tapped on the favourites tab). Not persisted.
+  final tab = ValueNotifier<int>(0);
+  final searchRequest = ValueNotifier<SavedRoute?>(null);
+
+  void searchRoute(SavedRoute r) {
+    tab.value = 0;
+    searchRequest.value = r;
+  }
+
   List<Place> recentPlaces = [];
   List<SavedRoute> recentRoutes = [];
   SavedSearch? lastSearch;
@@ -197,8 +208,8 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// [newIndex] is the final position (already adjusted for the removed item).
   void reorderFavorites(int oldIndex, int newIndex) {
-    if (newIndex > oldIndex) newIndex--;
     favorites.insert(newIndex, favorites.removeAt(oldIndex));
     _write('favorites', favorites.map((r) => r.toJson()).toList());
     notifyListeners();

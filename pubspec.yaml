@@ -1,7 +1,7 @@
 name: anschluss
 description: "Every train in Germany in one search: DB, FlixTrain, ÖBB and all regional operators, with prices and maps."
 publish_to: 'none'
-version: 0.4.0+4
+version: 0.5.0+5
 
 environment:
   sdk: ^3.13.0
@@ -15,6 +15,7 @@ dependencies:
   geolocator: ^14.1.1
   http: ^1.6.0
   latlong2: ^0.10.1
+  maplibre_gl: ^0.27.1
   path_provider: ^2.1.6
   shared_preferences: ^2.5.5
   url_launcher: ^6.3.2

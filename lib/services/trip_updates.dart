@@ -58,13 +58,12 @@ List<String> diffJourneys(Journey old, Journey neu, S s) {
   return out;
 }
 
-class TripUpdater with WidgetsBindingObserver {
+class TripUpdater extends ChangeNotifier with WidgetsBindingObserver {
   /// The app-wide instance (set in main).
   static TripUpdater? instance;
 
   final AppStore store;
   Timer? _timer;
-  final _running = <String>{};
 
   /// Called with (trip id, changes) whenever a refresh found something new – the UI shows a banner.
   final _listeners = <void Function(String, List<String>)>[];
@@ -89,8 +88,9 @@ class TripUpdater with WidgetsBindingObserver {
     _timer = Timer.periodic(Duration(seconds: store.settings.trackRefreshSeconds), (_) => refreshActive());
   }
 
-  void addListener(void Function(String, List<String>) f) => _listeners.add(f);
-  void removeListener(void Function(String, List<String>) f) => _listeners.remove(f);
+  /// Called with (trip id, changes) when a refresh found news (delays, platforms …).
+  void addChangeListener(void Function(String, List<String>) f) => _listeners.add(f);
+  void removeChangeListener(void Function(String, List<String>) f) => _listeners.remove(f);
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -113,10 +113,31 @@ class TripUpdater with WidgetsBindingObserver {
     }
   }
 
-  Future<TripRefreshResult> refresh(String id) async {
+  final _inFlight = <String, Future<TripRefreshResult>>{};
+  final _results = <String, (DateTime, TripRefreshResult)>{};
+
+  /// Last refresh outcome of a trip (and when), for the UI.
+  (DateTime, TripRefreshResult)? lastResult(String id) => _results[id];
+
+  /// Refreshes one trip. A refresh already running for it is shared (the second caller gets the real
+  /// result instead of a fake "offline").
+  Future<TripRefreshResult> refresh(String id) {
+    if (store.settings.offlineOnly) return Future.value(const TripRefreshResult(RefreshOutcome.offline));
+    return _inFlight.putIfAbsent(id, () async {
+      try {
+        final r = await _refresh(id);
+        _results[id] = (DateTime.now(), r);
+        notifyListeners();
+        return r;
+      } finally {
+        _inFlight.remove(id);
+      }
+    });
+  }
+
+  Future<TripRefreshResult> _refresh(String id) async {
     final trip = store.tripById(id);
-    if (store.settings.offlineOnly) return const TripRefreshResult(RefreshOutcome.offline);
-    if (trip == null || !_running.add(id)) return const TripRefreshResult(RefreshOutcome.offline);
+    if (trip == null) return const TripRefreshResult(RefreshOutcome.notFound);
     try {
       final s = S(store.settings.language);
       final st = store.settings;
@@ -165,15 +186,15 @@ class TripUpdater with WidgetsBindingObserver {
       return TripRefreshResult(RefreshOutcome.updated, changes: changes);
     } catch (e) {
       return TripRefreshResult(RefreshOutcome.offline, error: e.toString());
-    } finally {
-      _running.remove(id);
     }
   }
 
   static String _hhmm(DateTime d) => '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 
+  @override
   void dispose() {
     _timer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 }

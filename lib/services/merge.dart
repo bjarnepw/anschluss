@@ -1,5 +1,8 @@
 // Merges journeys from all sources: the same connection found by DB, Transitous and Flix becomes one entry
 // that carries every price and the best map geometry available. Then ranks them.
+import 'dart:math';
+
+import '../core/util.dart';
 import '../models/journey.dart';
 
 const _priority = {
@@ -153,4 +156,33 @@ List<Journey> rankJourneys(
     );
   }
   return journeys..sort((a, b) => a.score.compareTo(b.score));
+}
+
+/// Removes connections that make no sense to show (they confused people as "weird connections"):
+/// big detours, much slower options, and results that start/end far away from the chosen places –
+/// unless they are clearly cheaper than the sensible ones.
+List<Journey> pruneImplausible(List<Journey> js, Place from, Place to) {
+  final real = js.where((j) => !j.walkOnly && !j.cancelled && j.transit.isNotEmpty).toList();
+  if (real.length < 2) return js;
+  final direct = placeDist(from, to);
+  final fastest = real.map((j) => j.duration).reduce(min);
+  final cheapest = real.map((j) => j.bestPrice?.amount).whereType<double>().fold<double?>(null, (m, p) => m == null || p < m ? p : m);
+
+  double travelled(Journey j) => j.transit.fold(0.0, (sum, l) => sum + placeDist(l.from, l.to).clamp(0, 5000));
+  bool muchCheaper(Journey j) {
+    final p = j.bestPrice?.amount;
+    return p != null && cheapest != null && p <= cheapest * 0.7 + 0.01;
+  }
+
+  return js.where((j) {
+    if (j.walkOnly || j.transit.isEmpty) return true;
+    // Starts/ends at a station far away from what was picked (e.g. a namesake) – a data error.
+    final first = j.legs.first.from, last = j.legs.last.to;
+    if (from.hasCoords && first.hasCoords && placeDist(from, first) > 3 + direct * 0.3) return false;
+    if (to.hasCoords && last.hasCoords && placeDist(to, last) > 3 + direct * 0.3) return false;
+    if (muchCheaper(j)) return true;
+    if (direct.isFinite && direct > 5 && travelled(j) > direct * 2.3 + 10) return false; // big detour
+    if (j.duration > fastest * 2 + 20) return false; // far slower, not cheaper
+    return true;
+  }).toList();
 }

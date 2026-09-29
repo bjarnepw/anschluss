@@ -45,12 +45,19 @@ class _TripScreenState extends State<TripScreen> {
   @override
   void initState() {
     super.initState();
-    TripUpdater.instance?.addListener(_onChanges);
+    TripUpdater.instance?.addChangeListener(_onChanges);
+    TripUpdater.instance?.addListener(_onUpdater);
     _loc.position.addListener(_onPosition);
     _loc.resumeIfAllowed();
     // Re-evaluate every 15 s: where you should be moves on even without a new GPS fix.
     _tick = Timer.periodic(const Duration(seconds: 15), (_) => _onPosition());
     WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+  }
+
+  /// A refresh finished (ours or the background one): show its result.
+  void _onUpdater() {
+    final r = TripUpdater.instance?.lastResult(widget.tripId);
+    if (r != null && mounted) setState(() => _last = r.$2);
   }
 
   void _onPosition() {
@@ -123,7 +130,8 @@ class _TripScreenState extends State<TripScreen> {
 
   @override
   void dispose() {
-    TripUpdater.instance?.removeListener(_onChanges);
+    TripUpdater.instance?.removeChangeListener(_onChanges);
+    TripUpdater.instance?.removeListener(_onUpdater);
     _loc.position.removeListener(_onPosition);
     _tick?.cancel();
     super.dispose();
@@ -349,78 +357,6 @@ class _TripScreenState extends State<TripScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// All saved trips: upcoming first, then the ones that just ended.
-class TripsScreen extends StatelessWidget {
-  const TripsScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final s = context.s;
-    final store = context.store;
-    final trips = store.trips;
-    final upcoming = trips.where((t) => !t.finished).toList();
-    final past = trips.where((t) => t.finished).toList().reversed.toList();
-    return Scaffold(
-      appBar: AppBar(title: Text(s.de ? 'Meine Reisen' : 'My trips')),
-      body: trips.isEmpty
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Text(
-                  s.de
-                      ? 'Noch keine gespeicherten Reisen.\nÖffne eine Verbindung und tippe auf „Reise speichern“ – sie ist dann auch offline verfügbar und wird unterwegs aktualisiert.'
-                      : 'No saved trips yet.\nOpen a connection and tap “Save trip” – it is then available offline and updated on the go.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            )
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                for (final (label, list) in [(s.de ? 'Anstehend' : 'Upcoming', upcoming), (s.de ? 'Vergangen' : 'Past', past)])
-                  if (list.isNotEmpty) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
-                      child: Text(label, style: Theme.of(context).textTheme.titleSmall),
-                    ),
-                    for (final t in list)
-                      Dismissible(
-                        key: ValueKey(t.id),
-                        direction: DismissDirection.endToStart,
-                        background: Container(
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.only(right: 24),
-                          color: Theme.of(context).colorScheme.errorContainer,
-                          child: const Icon(Icons.delete_outline),
-                        ),
-                        onDismissed: (_) => store.removeTrip(t.id),
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-                                child: Text(
-                                  '${t.route.from.name} → ${t.route.to.name} · ${fmtDate(t.journey.departure, s.de)}',
-                                  style: Theme.of(context).textTheme.labelLarge,
-                                ),
-                              ),
-                              JourneyCard(
-                                journey: t.journey,
-                                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TripScreen(tripId: t.id))),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
-              ],
-            ),
     );
   }
 }

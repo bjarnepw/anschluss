@@ -128,7 +128,7 @@ class TransitousSource implements Source, LocationSource {
       if (opts.moreAlternatives) 'searchWindow': '${3 * 3600}',
     };
     final data = await _plan(params);
-    return parseTransitousPlan(data, opts);
+    return parseTransitousPlan(data, opts, fromName: from.name, toName: to.name);
   }
 }
 
@@ -270,8 +270,15 @@ List<List<double>>? _geometry(Map<String, dynamic> leg) {
   return null;
 }
 
-Place _place(Map<String, dynamic> p) =>
-    Place(name: p['name'] as String? ?? '', lat: (p['lat'] as num?)?.toDouble(), lon: (p['lon'] as num?)?.toDouble());
+/// Names for MOTIS' placeholders when routing from/to coordinates ("START"/"END").
+String? _startName, _endName;
+
+Place _place(Map<String, dynamic> p) {
+  var name = p['name'] as String? ?? '';
+  if (name == 'START' && _startName != null) name = _startName!;
+  if (name == 'END' && _endName != null) name = _endName!;
+  return Place(name: name, lat: (p['lat'] as num?)?.toDouble(), lon: (p['lon'] as num?)?.toDouble());
+}
 
 Leg? _leg(Map<String, dynamic> l) {
   final dep = DateTime.tryParse(l['startTime'] as String? ?? '');
@@ -329,7 +336,9 @@ Leg? _leg(Map<String, dynamic> l) {
   );
 }
 
-List<Journey> parseTransitousPlan(Map<String, dynamic> data, SearchOptions opts) {
+List<Journey> parseTransitousPlan(Map<String, dynamic> data, SearchOptions opts, {String? fromName, String? toName}) {
+  _startName = fromName;
+  _endName = toName;
   final out = <Journey>[];
   for (final it in ((data['itineraries'] as List?) ?? []).whereType<Map<String, dynamic>>()) {
     final legs = ((it['legs'] as List?) ?? []).whereType<Map<String, dynamic>>().map(_leg).whereType<Leg>().toList();

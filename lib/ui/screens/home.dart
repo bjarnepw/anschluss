@@ -86,10 +86,29 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _onSearchRequest() {
+    final store = AppScope.read(context);
+    final r = store.searchRequest.value;
+    if (r == null) return;
+    store.searchRequest.value = null;
+    setState(() {
+      _from = r.from;
+      _to = r.to;
+      _when = null;
+    });
+    _search();
+  }
+
+  bool _listening = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final store = AppScope.read(context);
+    if (!_listening) {
+      _listening = true;
+      store.searchRequest.addListener(_onSearchRequest);
+    }
     if (!store.settings.seenIntro && !_introShown) {
       _introShown = true;
       WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -105,6 +124,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    AppScope.read(context).searchRequest.removeListener(_onSearchRequest);
     _sub?.cancel();
     _settle?.cancel();
     _paintTimer?.cancel();
@@ -415,15 +435,6 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             const Text('Anschluss', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
             IconButton(
-              tooltip: s.de ? 'Meine Reisen' : 'My trips',
-              icon: Badge(
-                isLabelVisible: context.store.trips.any((t) => !t.finished),
-                label: Text('${context.store.trips.where((t) => !t.finished).length}'),
-                child: const Icon(Icons.bookmarks_outlined),
-              ),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TripsScreen())),
-            ),
-            IconButton(
               tooltip: s.settings,
               icon: const Icon(Icons.tune),
               onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
@@ -442,15 +453,6 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           const Text('Anschluss', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
           const Spacer(),
-          IconButton(
-            tooltip: s.de ? 'Meine Reisen' : 'My trips',
-            icon: Badge(
-              isLabelVisible: context.store.trips.any((t) => !t.finished),
-              label: Text('${context.store.trips.where((t) => !t.finished).length}'),
-              child: const Icon(Icons.bookmarks_outlined),
-            ),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TripsScreen())),
-          ),
           IconButton(
             tooltip: s.settings,
             icon: const Icon(Icons.tune),
