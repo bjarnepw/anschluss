@@ -83,7 +83,9 @@ Stream<SearchResult> searchJourneys(
         .where((j) => !j.walkOnly && !j.cancelled)
         .map((j) => j.duration)
         .fold<int?>(null, (m, d) => m == null || d < m ? d : m);
-    merged = merged.where((j) => !j.walkOnly || fastest == null || j.duration <= 30 || j.duration <= fastest * 1.4).toList();
+    merged = merged
+        .where((j) => !j.walkOnly || j.duration <= opts.walkOnlyMaxMinutes || (fastest != null && j.duration <= fastest * 1.2))
+        .toList();
     rankJourneys(merged, when: opts.when, arriveBy: opts.arriveBy, dticket: opts.dticket, minTransfer: opts.minTransferMinutes);
     ctrl.add(SearchResult(merged, Map.of(status), done: pending == 0, fetchedAt: DateTime.now()));
   }

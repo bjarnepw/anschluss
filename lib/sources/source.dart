@@ -21,6 +21,9 @@ class SearchOptions {
   /// Also offer walking the whole way when that is competitive.
   final bool includeWalking;
 
+  /// Walking the whole way is shown up to this many minutes (or when about as fast as the train).
+  final int walkOnlyMaxMinutes;
+
   /// Ask sources for slower-but-cheaper and more varied connections, and search Flix+feeder combos.
   final bool moreAlternatives;
 
@@ -42,6 +45,7 @@ class SearchOptions {
     this.results = 6,
     this.maxWalkMinutes = 15,
     this.includeWalking = true,
+    this.walkOnlyMaxMinutes = 30,
     this.moreAlternatives = true,
     this.regionalOnly = false,
   });
@@ -60,6 +64,7 @@ class SearchOptions {
     age: s.age,
     maxWalkMinutes: s.maxWalkMinutes,
     includeWalking: s.includeWalking,
+    walkOnlyMaxMinutes: s.walkOnlyMaxMinutes,
     moreAlternatives: s.moreAlternatives,
     results: s.moreAlternatives ? 8 : 6,
   );

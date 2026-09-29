@@ -156,11 +156,27 @@ class SettingsScreen extends StatelessWidget {
               onChanged: (v) => set(st.copyWith(maxWalkMinutes: v.round())),
             ),
           ),
-          SwitchListTile(
-            secondary: const Icon(Icons.hiking),
-            title: Text(s.de ? 'Komplett zu Fuß anzeigen, wenn schneller' : 'Show walking the whole way when faster'),
-            value: st.includeWalking,
-            onChanged: (v) => set(st.copyWith(includeWalking: v)),
+          ListTile(
+            leading: const Icon(Icons.hiking),
+            title: Text(s.de ? 'Komplett zu Fuß anzeigen bis' : 'Show walking the whole way up to'),
+            trailing: Text(st.includeWalking ? '${st.walkOnlyMaxMinutes} min' : (s.de ? 'Aus' : 'Off'), style: t.titleSmall),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(s.de ? 'Oder wenn es kaum langsamer als der Zug ist.' : 'Or when it is hardly slower than the train.'),
+                Slider(
+                  // 0 = off, then 10 … 90 minutes
+                  value: st.includeWalking ? st.walkOnlyMaxMinutes.toDouble() : 0,
+                  min: 0,
+                  max: 90,
+                  divisions: 9,
+                  label: st.includeWalking ? '${st.walkOnlyMaxMinutes} min' : (s.de ? 'Aus' : 'Off'),
+                  onChanged: (v) => v < 10
+                      ? set(st.copyWith(includeWalking: false))
+                      : set(st.copyWith(includeWalking: true, walkOnlyMaxMinutes: v.round())),
+                ),
+              ],
+            ),
           ),
           SwitchListTile(
             secondary: const Icon(Icons.alt_route),

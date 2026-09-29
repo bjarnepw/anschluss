@@ -58,6 +58,9 @@ class Settings {
   /// Offer walking the whole way when it is competitive.
   final bool includeWalking;
 
+  /// Walking the whole way is shown up to this many minutes (or when it is about as fast as the train).
+  final int walkOnlyMaxMinutes;
+
   /// Search wider: cheaper/slower DB routes, more Transitous options, Flix + feeder combinations.
   final bool moreAlternatives;
 
@@ -97,6 +100,7 @@ class Settings {
     this.trackRefreshSeconds = 60,
     this.maxWalkMinutes = 15,
     this.includeWalking = true,
+    this.walkOnlyMaxMinutes = 30,
     this.moreAlternatives = true,
     this.tileUrl = '',
     this.offlineOnly = false,
@@ -127,6 +131,7 @@ class Settings {
     int? trackRefreshSeconds,
     int? maxWalkMinutes,
     bool? includeWalking,
+    int? walkOnlyMaxMinutes,
     bool? moreAlternatives,
     String? tileUrl,
     bool? offlineOnly,
@@ -155,6 +160,7 @@ class Settings {
     trackRefreshSeconds: trackRefreshSeconds ?? this.trackRefreshSeconds,
     maxWalkMinutes: maxWalkMinutes ?? this.maxWalkMinutes,
     includeWalking: includeWalking ?? this.includeWalking,
+    walkOnlyMaxMinutes: walkOnlyMaxMinutes ?? this.walkOnlyMaxMinutes,
     moreAlternatives: moreAlternatives ?? this.moreAlternatives,
     tileUrl: tileUrl ?? this.tileUrl,
     offlineOnly: offlineOnly ?? this.offlineOnly,
@@ -185,6 +191,7 @@ class Settings {
     'trackRefreshSeconds': trackRefreshSeconds,
     'maxWalkMinutes': maxWalkMinutes,
     'includeWalking': includeWalking,
+    'walkOnlyMaxMinutes': walkOnlyMaxMinutes,
     'moreAlternatives': moreAlternatives,
     'tileUrl': tileUrl,
     'offlineOnly': offlineOnly,
@@ -218,6 +225,7 @@ class Settings {
       trackRefreshSeconds: pick('trackRefreshSeconds', d.trackRefreshSeconds).clamp(30, 600),
       maxWalkMinutes: pick('maxWalkMinutes', d.maxWalkMinutes).clamp(5, 60),
       includeWalking: pick('includeWalking', d.includeWalking),
+      walkOnlyMaxMinutes: pick('walkOnlyMaxMinutes', d.walkOnlyMaxMinutes).clamp(10, 90),
       moreAlternatives: pick('moreAlternatives', d.moreAlternatives),
       tileUrl: pick('tileUrl', d.tileUrl),
       offlineOnly: pick('offlineOnly', d.offlineOnly),

@@ -29,7 +29,7 @@ const _modes = {
 const _regional = 'REGIONAL_FAST_RAIL,REGIONAL_RAIL,RAIL,SUBURBAN,SUBWAY,METRO,TRAM,BUS,FERRY,CABLE_CAR,FUNICULAR,ODM';
 
 /// Walking the whole way is only offered up to this long.
-const _maxWalkOnlyMinutes = 75;
+const _maxWalkOnlyMinutes = 120; // the user's limit is applied when showing results
 
 const _noCoach =
     'HIGHSPEED_RAIL,LONG_DISTANCE,NIGHT_RAIL,REGIONAL_FAST_RAIL,REGIONAL_RAIL,RAIL,SUBURBAN,SUBWAY,METRO,'
