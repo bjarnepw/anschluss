@@ -97,7 +97,7 @@ jobs:
         if: steps.gate.outputs.run == 'true' && matrix.platform == 'android'
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21' # maplibre_gl needs Java 21
           cache: gradle
 
       # Same key for every release, so new versions install as updates over old ones.

@@ -9,7 +9,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 /// Keep in sync with pubspec.yaml. Stable product name + contact, as the OSM tile policy and Transitous ask.
-const appVersion = '0.5.0';
+const appVersion = '0.5.1';
 const userAgent = 'Anschluss/$appVersion (+https://github.com/bjarnepw/anschluss)';
 
 /// An error the user should see in plain words, plus whether retrying makes sense.
