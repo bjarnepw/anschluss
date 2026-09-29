@@ -180,6 +180,9 @@ List<Journey> pruneImplausible(List<Journey> js, Place from, Place to) {
     final first = j.legs.first.from, last = j.legs.last.to;
     if (from.hasCoords && first.hasCoords && placeDist(from, first) > 3 + direct * 0.3) return false;
     if (to.hasCoords && last.hasCoords && placeDist(to, last) > 3 + direct * 0.3) return false;
+    // Hard limits, even for cheap options: nobody wants Berlin → Heidelberg via Switzerland.
+    if (direct.isFinite && direct > 5 && travelled(j) > direct * 3 + 20) return false;
+    if (j.duration > fastest * 1.6 + 60 && j.duration > fastest + 120) return false;
     if (muchCheaper(j)) return true;
     if (direct.isFinite && direct > 5 && travelled(j) > direct * 2.3 + 10) return false; // big detour
     if (j.duration > fastest * 2 + 20) return false; // far slower, not cheaper

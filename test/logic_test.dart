@@ -189,4 +189,34 @@ void main() {
     expect(j.bestPrice!.partial, isTrue);
     expect(j.sources, containsAll(['db', 'transitous']));
   });
+
+  test('huge detours are dropped even when cheap', () {
+    Leg at(String line, double lat1, double lon1, double lat2, double lon2, int dep, int arr) => Leg(
+      mode: Mode.long,
+      line: line,
+      from: Place(name: line, lat: lat1, lon: lon1),
+      to: Place(name: line, lat: lat2, lon: lon2),
+      dep: DateTime.utc(2026, 10, 1, 8).add(Duration(minutes: dep)),
+      arr: DateTime.utc(2026, 10, 1, 8).add(Duration(minutes: arr)),
+    );
+    const berlin = Place(name: 'Berlin', lat: 52.52, lon: 13.37), heidelberg = Place(name: 'Heidelberg', lat: 49.40, lon: 8.68);
+    final direct = Journey(
+      source: 'db',
+      dticket: false,
+      legs: [at('ICE 1', 52.52, 13.37, 49.40, 8.68, 0, 330)],
+      prices: [const Price(amount: 90, source: 'db')],
+    );
+    final crazy = Journey(
+      source: 'db',
+      dticket: false,
+      legs: [
+        at('ICE 2', 52.52, 13.37, 48.14, 11.56, 0, 240), // → München
+        at('EC 3', 48.14, 11.56, 47.42, 9.37, 250, 450), // → St. Gallen
+        at('IC 4', 47.42, 9.37, 49.40, 8.68, 460, 700), // → Heidelberg
+      ],
+      prices: [const Price(amount: 30, source: 'db')],
+    );
+    final kept = pruneImplausible([direct, crazy], berlin, heidelberg);
+    expect(kept, [direct]);
+  });
 }
