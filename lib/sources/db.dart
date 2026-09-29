@@ -98,7 +98,11 @@ class DbSource implements Source, LocationSource {
     if (p.dbId != null) return p.dbId!;
     final hits = await locations(p.name);
     if (hits.isEmpty) throw SourceException('DB does not know "${p.name}"');
-    if (p.hasCoords) hits.sort((a, b) => placeDist(p, a).compareTo(placeDist(p, b)));
+    if (p.hasCoords) {
+      hits.sort((a, b) => placeDist(p, a).compareTo(placeDist(p, b)));
+      // Never a namesake far away from what was picked.
+      if (hits.first.hasCoords && placeDist(p, hits.first) > 5) throw SourceException('DB has no station near ${p.name}');
+    }
     return hits.first.dbId!;
   }
 

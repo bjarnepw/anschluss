@@ -219,4 +219,27 @@ void main() {
     final kept = pruneImplausible([direct, crazy], berlin, heidelberg);
     expect(kept, [direct]);
   });
+
+  test('routes only ÖBB knows must be competitive', () {
+    Leg at(String line, double lat1, double lon1, double lat2, double lon2, int dep, int arr) => Leg(
+      mode: Mode.long,
+      line: line,
+      from: Place(name: line, lat: lat1, lon: lon1),
+      to: Place(name: line, lat: lat2, lon: lon2),
+      dep: DateTime.utc(2026, 10, 1, 8).add(Duration(minutes: dep)),
+      arr: DateTime.utc(2026, 10, 1, 8).add(Duration(minutes: arr)),
+    );
+    const berlin = Place(name: 'Berlin', lat: 52.52, lon: 13.37), mannheim = Place(name: 'Mannheim', lat: 49.48, lon: 8.47);
+    final db = Journey(source: 'db', dticket: false, legs: [at('ICE 1', 52.52, 13.37, 49.48, 8.47, 0, 290)]);
+    final oebb = Journey(
+      source: 'oebb',
+      dticket: false,
+      legs: [
+        at('ICE 2', 52.52, 13.37, 49.45, 11.08, 0, 180), // Nürnberg
+        at('ICE 3', 49.45, 11.08, 48.14, 11.56, 190, 260), // München
+        at('EC 4', 48.14, 11.56, 49.48, 8.47, 270, 520),
+      ],
+    );
+    expect(pruneImplausible([db, oebb], berlin, mannheim), [db]);
+  });
 }

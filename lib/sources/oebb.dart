@@ -75,9 +75,12 @@ class OebbSource implements Source {
         .where((l) => l.id != null)
         .toList();
     if (locs.isEmpty) throw SourceException('ÖBB does not know "${p.name}"');
-    // prefer the candidate closest to the coordinates the user picked
+    // prefer the candidate closest to the coordinates the user picked – and never a namesake far away
+    // (a wrong match sent searches off to e.g. St. Gallen)
     if (p.hasCoords) {
       locs.sort((a, b) => distKm(p.lat, p.lon, a.lat, a.lon).compareTo(distKm(p.lat, p.lon, b.lat, b.lon)));
+      final d = distKm(p.lat, p.lon, locs.first.lat, locs.first.lon);
+      if (d > 5) throw SourceException('ÖBB has no station near ${p.name}');
     }
     return locs.first.id!;
   }

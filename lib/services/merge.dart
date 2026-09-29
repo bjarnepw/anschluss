@@ -180,6 +180,12 @@ List<Journey> pruneImplausible(List<Journey> js, Place from, Place to) {
     final first = j.legs.first.from, last = j.legs.last.to;
     if (from.hasCoords && first.hasCoords && placeDist(from, first) > 3 + direct * 0.3) return false;
     if (to.hasCoords && last.hasCoords && placeDist(to, last) > 3 + direct * 0.3) return false;
+    // ÖBB is a second opinion for Germany: what only ÖBB finds must be competitive (its German data is
+    // coarse – it produced routes like Berlin → Mannheim via St. Gallen).
+    if (j.sources.length == 1 && j.sources.first == 'oebb') {
+      if (j.duration > fastest * 1.25 + 15) return false;
+      if (direct.isFinite && direct > 5 && travelled(j) > direct * 1.6 + 10) return false;
+    }
     // Hard limits, even for cheap options: nobody wants Berlin → Heidelberg via Switzerland.
     if (direct.isFinite && direct > 5 && travelled(j) > direct * 3 + 20) return false;
     if (j.duration > fastest * 1.6 + 60 && j.duration > fastest + 120) return false;
