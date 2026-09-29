@@ -26,8 +26,12 @@ class RouteMap extends StatefulWidget {
   /// Called after real track geometry was loaded into [journey] (e.g. to save it with a trip).
   final ValueChanged<Journey>? onGeometry;
 
+  /// Where you should be right now according to the timetable (live analysis) – drawn as a ring.
+  final (double, double)? expected;
+
   const RouteMap({
     this.onGeometry,
+    this.expected,
     super.key,
     required this.journey,
     this.others = const [],
@@ -212,12 +216,12 @@ class _RouteMapState extends State<RouteMap> {
         if (l.path.length < 2) continue;
         final pts = l.path.map((p) => LatLng(p[0], p[1])).toList();
         final c = lineColor(l, b);
-        lines.add(Polyline(points: pts, color: b == Brightness.dark ? Colors.black : Colors.white, strokeWidth: l.isWalk ? 5 : 9));
+        lines.add(Polyline(points: pts, color: b == Brightness.dark ? Colors.black : Colors.white, strokeWidth: l.isWalk ? 8 : 9));
         lines.add(
           Polyline(
             points: pts,
             color: c,
-            strokeWidth: l.isWalk ? 3 : 5,
+            strokeWidth: l.isWalk ? 5 : 5,
             pattern: l.isWalk
                 ? StrokePattern.dotted(spacingFactor: 2)
                 : (l.pathExact ? const StrokePattern.solid() : StrokePattern.dashed(segments: const [12, 7])),
@@ -300,6 +304,27 @@ class _RouteMapState extends State<RouteMap> {
           ),
         PolylineLayer(polylines: lines),
         MarkerLayer(markers: markers),
+        if (widget.expected != null)
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: LatLng(widget.expected!.$1, widget.expected!.$2),
+                width: 30,
+                height: 30,
+                child: Tooltip(
+                  message: context.s.de ? 'Hier solltest du laut Fahrplan sein' : 'Where the timetable says you are',
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: cs.primary.withValues(alpha: 0.18),
+                      border: Border.all(color: cs.primary, width: 3),
+                    ),
+                    child: Icon(Icons.train, size: 14, color: cs.primary),
+                  ),
+                ),
+              ),
+            ],
+          ),
         if (me != null) ...[
           CircleLayer(
             circles: [

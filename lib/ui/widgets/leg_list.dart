@@ -64,19 +64,87 @@ class _WalkRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (leg.minutes <= 0 && (leg.walkDistance ?? 0) <= 0) return const SizedBox.shrink();
-    final c = Theme.of(context).colorScheme.onSurfaceVariant;
+    final t = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    final c = lineColor(leg, Theme.of(context).brightness);
+    final sameStation = leg.from.name == leg.to.name;
+    // Walking is a real part of the trip: times, where from/to, and a dotted "rail" in the walk colour.
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          const SizedBox(width: 52),
-          Icon(Icons.directions_walk, size: 18, color: c),
-          const SizedBox(width: 8),
-          Text(context.s.walkMin(leg.minutes, leg.walkDistance), style: TextStyle(color: c, fontSize: 13)),
-        ],
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: 52,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(fmtTime(leg.dep), style: t.labelMedium?.copyWith(color: cs.onSurfaceVariant)),
+                  Text(fmtTime(leg.arr), style: t.labelMedium?.copyWith(color: cs.onSurfaceVariant)),
+                ],
+              ),
+            ),
+            Container(
+              width: 4,
+              margin: const EdgeInsets.only(right: 12),
+              child: CustomPaint(painter: _DotsPainter(c)),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(color: c.withValues(alpha: 0.15), shape: BoxShape.circle),
+                      child: Icon(Icons.directions_walk, size: 18, color: c),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            context.s.walkMin(leg.minutes, leg.walkDistance),
+                            style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          if (!sameStation && leg.to.name.isNotEmpty)
+                            Text(
+                              '→ ${leg.to.name}',
+                              style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
+}
+
+class _DotsPainter extends CustomPainter {
+  final Color color;
+  _DotsPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = Paint()..color = color;
+    for (var y = 3.0; y < size.height; y += 8) {
+      canvas.drawCircle(Offset(size.width / 2, y), 2, p);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DotsPainter old) => old.color != color;
 }
 
 class _LegRow extends StatelessWidget {

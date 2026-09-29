@@ -6,6 +6,12 @@ import 'package:latlong2/latlong.dart';
 
 import '../../core/tiles/tile_cache.dart';
 import '../../models/journey.dart';
+import '../../services/live_analysis.dart';
+import '../../services/location.dart';
+import '../../services/search.dart';
+import '../../services/store.dart';
+import '../../sources/source.dart';
+import '../../offline/offline_pack.dart';
 import '../../services/trip_updates.dart';
 import '../app_scope.dart';
 import '../widgets/journey_card.dart';
@@ -28,16 +34,98 @@ class _TripScreenState extends State<TripScreen> {
   TripRefreshResult? _last;
   double? _download; // 0..1 while pre-downloading map tiles
 
+  // Live analysis
+  Timer? _tick;
+  final _loc = LocationService.instance;
+  List<Journey> _alts = [];
+  bool _altsLoading = false;
+  DateTime? _altsAt;
+  Place? _altsFrom;
+
   @override
   void initState() {
     super.initState();
     TripUpdater.instance?.addListener(_onChanges);
+    _loc.position.addListener(_onPosition);
+    _loc.resumeIfAllowed();
+    // Re-evaluate every 15 s: where you should be moves on even without a new GPS fix.
+    _tick = Timer.periodic(const Duration(seconds: 15), (_) => _onPosition());
     WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
+  }
+
+  void _onPosition() {
+    if (!mounted) return;
+    setState(() {});
+    final trip = context.store.tripById(widget.tripId);
+    if (trip == null) return;
+    final p = _loc.position.value;
+    final live = analyseTrip(
+      trip.journey,
+      DateTime.now(),
+      lat: p?.latitude,
+      lon: p?.longitude,
+      minTransfer: context.store.settings.minTransferMinutes,
+    );
+    // Something breaks: look for alternatives on our own (at most every 5 minutes).
+    if (live.atRisk && (_altsAt == null || DateTime.now().difference(_altsAt!).inMinutes >= 5)) _findAlternatives(live);
+  }
+
+  /// Long-range search from where you'll be (next stop / your position) to the destination – also later
+  /// and slower connections, so there is a plan B even when the next hour looks bad.
+  Future<void> _findAlternatives(LiveAnalysis live) async {
+    final store = context.store;
+    final trip = store.tripById(widget.tripId);
+    if (trip == null || _altsLoading || store.settings.offlineOnly && !OfflinePack.instance.available) return;
+    final p = _loc.position.value;
+    final now = DateTime.now();
+    final from = alternativesStart(trip.journey, now, lat: p?.latitude, lon: p?.longitude, here: context.s.myLocation);
+    // Earliest you can start from there: arrival at the next stop incl. the estimated delay.
+    var when = now;
+    final leg = live.leg;
+    if (leg != null && !now.isBefore(leg.dep)) {
+      final next = leg.stops.where((x) => (x.arr ?? x.dep)?.isAfter(now) ?? false).firstOrNull;
+      final base = (next?.arr ?? next?.dep) ?? leg.arr;
+      when = base.add(Duration(minutes: live.effectiveDelay - live.officialDelay));
+    }
+    setState(() {
+      _altsLoading = true;
+      _altsAt = now;
+      _altsFrom = from;
+    });
+    final opts = SearchOptions.from(store.settings, when);
+    final wide = SearchOptions(
+      when: opts.when,
+      minTransferMinutes: opts.minTransferMinutes,
+      bahncard: opts.bahncard,
+      firstClass: opts.firstClass,
+      dticket: opts.dticket,
+      bike: opts.bike,
+      coach: opts.coach,
+      age: opts.age,
+      results: 10, // long-term: more and later options
+      maxWalkMinutes: opts.maxWalkMinutes,
+      includeWalking: opts.includeWalking,
+      moreAlternatives: true,
+    );
+    SearchResult? last;
+    try {
+      await for (final r in searchJourneys(from, trip.route.to, wide, store.settings.sources, offlineOnly: store.settings.offlineOnly)) {
+        last = r;
+      }
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _altsLoading = false;
+      _alts = (last?.journeys ?? const <Journey>[]).where((x) => !x.cancelled && x.id != trip.journey.id).toList()
+        ..sort((a, b) => a.arrival.compareTo(b.arrival));
+    });
   }
 
   @override
   void dispose() {
     TripUpdater.instance?.removeListener(_onChanges);
+    _loc.position.removeListener(_onPosition);
+    _tick?.cancel();
     super.dispose();
   }
 
@@ -93,6 +181,8 @@ class _TripScreenState extends State<TripScreen> {
     final offline = _last?.outcome == RefreshOutcome.offline;
     final lost = _last?.outcome == RefreshOutcome.notFound;
     final canPrefetch = !kIsWeb && prefetchAllowed(store.settings.tileUrl);
+    final pos = _loc.position.value;
+    final live = analyseTrip(j, DateTime.now(), lat: pos?.latitude, lon: pos?.longitude, minTransfer: minTransfer);
 
     return Scaffold(
       appBar: AppBar(
@@ -132,6 +222,17 @@ class _TripScreenState extends State<TripScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           children: [
             TripProgressCard(journey: j),
+            const SizedBox(height: 8),
+            _LiveCard(
+              live: live,
+              hasGps: pos != null,
+              loading: _altsLoading,
+              onAlternatives: () => _findAlternatives(live),
+              onLocate: () async {
+                await _loc.enable();
+                _onPosition();
+              },
+            ),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -178,6 +279,7 @@ class _TripScreenState extends State<TripScreen> {
               height: 300,
               child: RouteMap(
                 journey: j,
+                expected: live.expected,
                 onGeometry: (g) => store.updateTrip(trip.copyWith(journey: g)),
               ),
             ),
@@ -208,6 +310,24 @@ class _TripScreenState extends State<TripScreen> {
             LegList(journey: j),
             const SizedBox(height: 12),
             Wrap(spacing: 8, runSpacing: 8, children: bookingButtons(context, j)),
+            if (_alts.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              Text('${s.alternatives}${_altsFrom != null ? ' ${s.de ? 'ab' : 'from'} ${_altsFrom!.name}' : ''}', style: t.titleMedium),
+              const SizedBox(height: 8),
+              for (final a in _alts)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: JourneyCard(
+                    journey: a,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => JourneyDetailScreen(journey: a, route: SavedRoute(_altsFrom ?? a.legs.first.from, trip.route.to)),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
             if (lost && _last!.alternatives.isNotEmpty) ...[
               const SizedBox(height: 24),
               Text(s.alternatives, style: t.titleMedium),
@@ -326,6 +446,133 @@ class _Banner extends StatelessWidget {
             style: TextStyle(color: onColor, fontWeight: FontWeight.w600),
           ),
         ),
+      ],
+    ),
+  );
+}
+
+/// Live check: official delay vs. what your position says, distance to where you should be, and warnings.
+class _LiveCard extends StatelessWidget {
+  final LiveAnalysis live;
+  final bool hasGps;
+  final bool loading;
+  final VoidCallback onAlternatives;
+  final VoidCallback onLocate;
+  const _LiveCard({required this.live, required this.hasGps, required this.loading, required this.onAlternatives, required this.onLocate});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.s;
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).textTheme;
+    if (live.leg == null) return const SizedBox.shrink();
+    String delay(int m) => m <= 0 ? (s.de ? 'pünktlich' : 'on time') : '+$m min';
+    Color delayColor(int m) => m <= 0 ? Colors.green.shade600 : (m < 5 ? Colors.orange.shade700 : Colors.red.shade600);
+
+    final rows = <Widget>[
+      _row(context, Icons.campaign_outlined, s.de ? 'Offiziell' : 'Official', delay(live.officialDelay), delayColor(live.officialDelay)),
+      if (live.gpsDelay != null)
+        _row(
+          context,
+          Icons.gps_fixed,
+          s.de ? 'Laut deiner Position' : 'From your position',
+          delay(live.gpsDelay!),
+          delayColor(live.gpsDelay!),
+        ),
+      if (live.offsetKm != null && !live.offRoute)
+        _row(
+          context,
+          Icons.straighten,
+          s.de ? 'Abstand Soll ↔ Ist' : 'Planned ↔ actual',
+          live.offsetKm! < 1 ? '${(live.offsetKm! * 1000).round()} m' : '${live.offsetKm!.toStringAsFixed(1)} km',
+          null,
+        ),
+    ];
+    final warnings = <String>[
+      if (live.offRoute)
+        s.de
+            ? 'Du bist nicht auf der Strecke – nicht im Zug oder GPS ungenau.'
+            : "You're not on the route – not on the train, or GPS is inaccurate.",
+      if (live.reachStation != null && live.reachStation!.$1 > live.reachStation!.$2)
+        s.de
+            ? 'Zu Fuß brauchst du ca. ${live.reachStation!.$1} min zum Bahnhof, Abfahrt in ${live.reachStation!.$2} min.'
+            : 'Walking to the station takes about ${live.reachStation!.$1} min, departure in ${live.reachStation!.$2} min.',
+      for (final r in live.risks)
+        r.buffer < 0
+            ? (s.de
+                  ? 'Anschluss in ${r.transfer.departing.from.name} (${r.transfer.departing.line}) wird knapp verpasst (${r.buffer} min).'
+                  : 'Connection at ${r.transfer.departing.from.name} (${r.transfer.departing.line}) will be missed (${r.buffer} min).')
+            : (s.de
+                  ? 'Nur noch ${r.buffer} min Umstieg in ${r.transfer.departing.from.name}.'
+                  : 'Only ${r.buffer} min to change at ${r.transfer.departing.from.name}.'),
+    ];
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.insights, color: cs.primary, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(s.de ? 'Live-Analyse' : 'Live analysis', style: t.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+                ),
+                if (!hasGps)
+                  TextButton.icon(
+                    onPressed: onLocate,
+                    icon: const Icon(Icons.my_location, size: 18),
+                    label: Text(s.de ? 'Standort nutzen' : 'Use location'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            ...rows,
+            for (final w in warnings)
+              Container(
+                margin: const EdgeInsets.only(top: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: cs.errorContainer, borderRadius: BorderRadius.circular(12)),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: cs.onErrorContainer, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        w,
+                        style: TextStyle(color: cs.onErrorContainer, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.tonalIcon(
+                onPressed: loading ? null : onAlternatives,
+                icon: loading
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.alt_route),
+                label: Text(s.de ? 'Alternativen ab hier' : 'Alternatives from here'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _row(BuildContext context, IconData icon, String label, String value, Color? color) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Row(
+      children: [
+        Icon(icon, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
+        const SizedBox(width: 8),
+        Expanded(child: Text(label)),
+        Capsule(text: value, color: color),
       ],
     ),
   );

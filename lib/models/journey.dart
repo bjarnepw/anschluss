@@ -7,6 +7,8 @@ const dticketModes = {Mode.regional, Mode.suburban, Mode.metro, Mode.tram, Mode.
 
 Mode modeFromName(String? s) => Mode.values.firstWhere((m) => m.name == s, orElse: () => Mode.other);
 
+enum PlaceKind { stop, address, place }
+
 class Place {
   final String name;
   final double? lat;
@@ -16,7 +18,12 @@ class Place {
   final String? oebbId;
   final String? area;
 
-  const Place({required this.name, this.lat, this.lon, this.dbId, this.transitousId, this.oebbId, this.area});
+  /// What was picked: a station/stop, a street address, or another place (park, sight, …).
+  final PlaceKind kind;
+
+  const Place({required this.name, this.lat, this.lon, this.dbId, this.transitousId, this.oebbId, this.area, this.kind = PlaceKind.stop});
+
+  bool get isStop => kind == PlaceKind.stop;
 
   bool get hasCoords => lat != null && lon != null;
 
@@ -28,6 +35,7 @@ class Place {
     transitousId: transitousId ?? o.transitousId,
     oebbId: oebbId ?? o.oebbId,
     area: (area?.isNotEmpty ?? false) ? area : o.area,
+    kind: kind,
   );
 
   Map<String, dynamic> toJson() => {
@@ -38,6 +46,7 @@ class Place {
     if (transitousId != null) 'transitousId': transitousId,
     if (oebbId != null) 'oebbId': oebbId,
     if (area != null) 'area': area,
+    if (kind != PlaceKind.stop) 'kind': kind.name,
   };
 
   factory Place.fromJson(Map<String, dynamic> j) => Place(
@@ -48,6 +57,7 @@ class Place {
     transitousId: j['transitousId'] as String?,
     oebbId: j['oebbId'] as String?,
     area: j['area'] as String?,
+    kind: PlaceKind.values.firstWhere((k) => k.name == j['kind'], orElse: () => PlaceKind.stop),
   );
 
   @override

@@ -82,7 +82,8 @@ int _hash(String s) {
 String _lineKey(String line) => line.toUpperCase().replaceAll(RegExp(r'\s+'), '');
 
 Color familyColor(Family f, Brightness b) {
-  if (f.key == 'walk') return b == Brightness.dark ? const Color(0xFF9AA0A6) : const Color(0xFF80868B);
+  // Walking: a clear slate grey – visible on the map and in the strip, but never mistaken for a train.
+  if (f.key == 'walk') return b == Brightness.dark ? const Color(0xFFA7B2BD) : const Color(0xFF5B6873);
   final light = b == Brightness.dark ? 0.62 : 0.45;
   return HSLColor.fromAHSL(1, f.hue, f.sat, light).toColor();
 }

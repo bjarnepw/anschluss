@@ -77,6 +77,18 @@ class TransitousSource implements Source, LocationSource {
     return parseTransitousLocations(res);
   }
 
+  /// Street addresses and places (sights, parks, …) – no stations.
+  Future<List<Place>> addresses(String q) async {
+    final res = await cache.get('tr:addr:$q', const Duration(hours: 1), () {
+      return Net.instance.getJson(
+        Uri.parse('$_base/api/v1/geocode').replace(queryParameters: {'text': q, 'language': 'de'}),
+        timeout: const Duration(seconds: 6),
+        retries: 1,
+      );
+    });
+    return parseTransitousLocations(res).where((p) => !p.isStop).toList();
+  }
+
   /// Stops near a coordinate, closest first ("use my location").
   Future<List<Place>> nearby(double lat, double lon) async {
     final res = await Net.instance.getJson(
@@ -178,6 +190,38 @@ Future<List<List<double>>?> trackForLeg(Leg l) {
   });
 }
 
+/// The real walking route between the two ends of a walking leg (footpaths instead of a straight line).
+Future<List<List<double>>?> walkForLeg(Leg l) {
+  if (!l.isWalk || !l.from.hasCoords || !l.to.hasCoords) return Future.value(null);
+  final key = 'walk:${l.from.lat},${l.from.lon}>${l.to.lat},${l.to.lon}';
+  return cache.get(key, const Duration(days: 1), () async {
+    try {
+      final data = await Net.instance.getJson(
+        Uri.parse('$_base/api/v6/plan').replace(
+          queryParameters: {
+            'fromPlace': '${l.from.lat},${l.from.lon}',
+            'toPlace': '${l.to.lat},${l.to.lon}',
+            'time': '${l.dep.toUtc().toIso8601String().substring(0, 19)}Z',
+            'directModes': 'WALK',
+            'transitModes': 'WALK', // no public transport: only the direct walk
+            'maxDirectTime': '7200',
+          },
+        ),
+        timeout: const Duration(seconds: 10),
+        retries: 0,
+      );
+      for (final it in ((data['direct'] as List?) ?? []).whereType<Map<String, dynamic>>()) {
+        final pts = <List<double>>[];
+        for (final raw in ((it['legs'] as List?) ?? []).whereType<Map<String, dynamic>>()) {
+          pts.addAll(_geometry(raw) ?? const []);
+        }
+        if (pts.length >= 2) return pts;
+      }
+    } catch (_) {}
+    return null;
+  });
+}
+
 List<Place> parseTransitousLocations(dynamic res) {
   if (res is! List) return [];
   return res
@@ -185,12 +229,23 @@ List<Place> parseTransitousLocations(dynamic res) {
       .take(8)
       .map((m) {
         final areas = (m['areas'] as List?)?.whereType<Map<String, dynamic>>() ?? const [];
+        final area = firstOrNull(areas.where((a) => a['default'] == true))?['name'] as String? ?? '';
+        final kind = switch (m['type']) {
+          'ADDRESS' => PlaceKind.address,
+          'PLACE' => PlaceKind.place,
+          _ => PlaceKind.stop,
+        };
+        var name = m['name'] as String? ?? '';
+        // "Friedrich-Ebert-Straße 79" alone is ambiguous: add the town.
+        if (kind != PlaceKind.stop && area.isNotEmpty && !name.contains(area)) name = '$name, $area';
+        final id = m['id'] as String?;
         return Place(
-          name: m['name'] as String? ?? '',
+          name: name,
           lat: (m['lat'] as num?)?.toDouble(),
           lon: (m['lon'] as num?)?.toDouble(),
-          transitousId: m['id'] as String?,
-          area: firstOrNull(areas.where((a) => a['default'] == true))?['name'] as String? ?? '',
+          transitousId: (id?.isEmpty ?? true) ? null : id,
+          area: [if (m['zip'] != null) m['zip'], area].where((x) => '$x'.isNotEmpty).join(' '),
+          kind: kind,
         );
       })
       .where((p) => p.name.isNotEmpty)

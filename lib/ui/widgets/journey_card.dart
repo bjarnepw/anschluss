@@ -28,9 +28,11 @@ class JourneyStrip extends StatelessWidget {
         final labels = <(double, String, bool)>[]; // x, text, bold
         DateTime? prevArr;
         for (final l in journey.legs) {
+          // Walks of 0 minutes (same platform) are not worth a segment.
+          if (l.isWalk && l.minutes < 1) continue;
           final left = x(l.dep), right = x(l.arr);
           final width = (right - left).clamp(3.0, w);
-          if (prevArr != null && !l.isWalk) {
+          if (prevArr != null) {
             final wait = l.dep.difference(prevArr).inMinutes;
             final gapL = x(prevArr), gapW = left - gapL;
             if (wait > 0 && gapW > 16) {
@@ -53,38 +55,50 @@ class JourneyStrip extends StatelessWidget {
               );
             }
           }
+          // Walking takes time like a train ride: a full segment with 🚶 and the minutes.
           final col = lineColor(l, b);
-          final label = l.isWalk ? '' : l.line.replaceAll(RegExp(r'\s*\(.*\)'), '');
+          final fg = onLineColor(col);
+          final label = l.isWalk ? "${l.minutes}'" : l.line.replaceAll(RegExp(r'\s*\(.*\)'), '');
           children.add(
             Positioned(
               left: left,
               width: width,
-              top: l.isWalk ? height / 3 : 0,
-              height: l.isWalk ? height / 3 : height,
+              top: 0,
+              height: height,
               child: Tooltip(
-                message: '${l.line} ${fmtTime(l.dep)}–${fmtTime(l.arr)}',
+                message: l.isWalk
+                    ? '${context.s.walk} ${fmtTime(l.dep)}–${fmtTime(l.arr)}'
+                    : '${l.line} ${fmtTime(l.dep)}–${fmtTime(l.arr)}',
                 child: Container(
                   margin: const EdgeInsets.symmetric(horizontal: 1),
                   alignment: Alignment.center,
-                  decoration: BoxDecoration(color: l.isWalk ? col.withValues(alpha: 0.5) : col, borderRadius: BorderRadius.circular(6)),
-                  child: label.isEmpty || width < 24
+                  decoration: BoxDecoration(color: col, borderRadius: BorderRadius.circular(6)),
+                  child: width < 16
                       ? null
-                      : Text(
-                          label,
-                          maxLines: 1,
-                          overflow: TextOverflow.clip,
-                          softWrap: false,
-                          style: TextStyle(color: onLineColor(col), fontSize: 11, fontWeight: FontWeight.w700),
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (l.isWalk) Icon(Icons.directions_walk, size: 13, color: fg),
+                            if (!l.isWalk || width >= 40)
+                              Flexible(
+                                child: Text(
+                                  label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.clip,
+                                  softWrap: false,
+                                  style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                          ],
                         ),
                 ),
               ),
             ),
           );
-          if (!l.isWalk) {
-            labels.add((left, fmtTime(l.dep), prevArr == null));
-            labels.add((right, fmtTime(l.arr), identical(l, journey.transit.last)));
-          }
-          if (!l.isWalk) prevArr = l.arr;
+          labels.add((left, fmtTime(l.dep), prevArr == null));
+          labels.add((right, fmtTime(l.arr), identical(l, journey.legs.last)));
+          prevArr = l.arr;
         }
         final rows = <Widget>[
           SizedBox(

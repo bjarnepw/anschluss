@@ -86,4 +86,24 @@ void main() {
     expect(js, isNotEmpty);
     expect(js.first.bestPrice!.originalCurrency, 'CZK');
   });
+
+  test('address search and routing from an address', () async {
+    final hits = await searchLocations('Friedrich-Ebert-Straße 79 Potsdam');
+    final addr = hits.firstWhere((p) => p.kind == PlaceKind.address);
+    // ignore: avoid_print
+    print('address: ${addr.name} (${addr.area}) ${addr.lat},${addr.lon}');
+    SearchResult? last;
+    await for (final r in searchJourneys(addr, berlin, SearchOptions(when: DateTime.now().add(const Duration(hours: 12))), [
+      'db',
+      'transitous',
+    ])) {
+      last = r;
+    }
+    for (final j in last!.journeys.take(5)) {
+      // ignore: avoid_print
+      print('${fmt(j)}  legs: ${j.legs.map((l) => l.isWalk ? 'walk${l.minutes}' : l.line).join(' / ')}');
+    }
+    expect(last.journeys, isNotEmpty);
+    expect(last.journeys.first.legs.first.isWalk, isTrue);
+  });
 }

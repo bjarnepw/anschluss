@@ -160,8 +160,9 @@ Stream<SearchResult> searchJourneys(
     status[id] = const SourceStatus(SourceState.loading);
     pending++;
     final sw = Stopwatch()..start();
-    src
-        .journeys(from, to, opts)
+    // Transitous and the offline router route from any coordinate; the others only know stations.
+    final fromAnywhere = id == 'transitous' || id == 'offline';
+    (fromAnywhere ? src.journeys(from, to, opts) : _viaStations(src, from, to, opts))
         .timeout(_sourceTimeout)
         .then((all) {
           // Sanity window: never show connections from another day because an API misread the time.
@@ -194,6 +195,74 @@ Stream<SearchResult> searchJourneys(
   return ctrl.stream;
 }
 
+/// Nearest stop for an address/place: (station, walking minutes). Stops are returned as they are.
+Future<(Place, int)> stationFor(Place p) async {
+  if (p.isStop || !p.hasCoords) return (p, 0);
+  final near = await cache.get('near:${p.lat!.toStringAsFixed(4)},${p.lon!.toStringAsFixed(4)}', const Duration(hours: 6), () {
+    return transitousSource.nearby(p.lat!, p.lon!);
+  });
+  final s = near.where((x) => x.isStop && x.hasCoords).firstOrNull;
+  if (s == null) throw SourceException('no stop near ${p.name}');
+  // Streets aren't straight: ~1.3× the direct distance at ~4.5 km/h.
+  final minutes = (placeDist(p, s) * 1.3 / 4.5 * 60).ceil().clamp(1, 60);
+  return (s, minutes);
+}
+
+Leg _walkLeg(Place from, Place to, DateTime dep, int minutes) => Leg(
+  mode: Mode.walk,
+  line: 'Walk',
+  from: from,
+  to: to,
+  dep: dep,
+  arr: dep.add(Duration(minutes: minutes)),
+  walkDistance: placeDist(from, to) * 1300,
+  path: [
+    [from.lat!, from.lon!],
+    [to.lat!, to.lon!],
+  ],
+);
+
+/// Runs a station-only source for an address/place: searches from/to the nearest stop and adds the walks.
+Future<List<Journey>> _viaStations(Source src, Place from, Place to, SearchOptions opts) async {
+  if (from.isStop && to.isStop) return src.journeys(from, to, opts);
+  final (a, walkIn) = await stationFor(from);
+  final (b, walkOut) = await stationFor(to);
+  final shifted = SearchOptions(
+    when: opts.arriveBy ? opts.when.subtract(Duration(minutes: walkOut)) : opts.when.add(Duration(minutes: walkIn)),
+    arriveBy: opts.arriveBy,
+    minTransferMinutes: opts.minTransferMinutes,
+    maxTransfers: opts.maxTransfers,
+    bahncard: opts.bahncard,
+    firstClass: opts.firstClass,
+    dticket: opts.dticket,
+    dticketOnly: opts.dticketOnly,
+    bike: opts.bike,
+    coach: opts.coach,
+    age: opts.age,
+    results: opts.results,
+    maxWalkMinutes: opts.maxWalkMinutes,
+    includeWalking: false,
+    moreAlternatives: opts.moreAlternatives,
+  );
+  final list = await src.journeys(a, b, shifted);
+  return [
+    for (final j in list)
+      Journey(
+        source: j.source,
+        sources: j.sources,
+        legs: [
+          if (walkIn > 0) _walkLeg(from, a, j.departure.subtract(Duration(minutes: walkIn)), walkIn),
+          ...j.legs,
+          if (walkOut > 0) _walkLeg(b, to, j.arrival, walkOut),
+        ],
+        prices: j.prices,
+        dticket: j.dticket,
+        soldOut: j.soldOut,
+        bookingUrls: j.bookingUrls,
+      ),
+  ];
+}
+
 bool _inWindow(Journey j, SearchOptions o) {
   const slack = Duration(hours: 2);
   return o.arriveBy
@@ -208,6 +277,7 @@ Future<List<Place>> searchLocations(String q, {bool offlineOnly = false}) async 
     if (!kIsWeb || Net.instance.webProxy.isNotEmpty) dbSource.locations(q).catchError((_) => <Place>[]),
     transitousSource.locations(q).catchError((_) => <Place>[]),
   ]);
+  final addresses = transitousSource.addresses(q).catchError((_) => <Place>[]);
   final out = <Place>[];
   for (final list in results) {
     for (final l in list) {
@@ -219,7 +289,17 @@ Future<List<Place>> searchLocations(String q, {bool offlineOnly = false}) async 
       }
     }
   }
+  // Stations first, then addresses and places (duplicates of the same spot dropped).
+  final stations = out.take(7).toList();
+  final extra = <Place>[];
+  for (final a in await addresses) {
+    if (extra.length >= 5) break;
+    if (extra.any((e) => placeDist(e, a) < 0.05 || e.name == a.name)) continue;
+    extra.add(a);
+  }
   // Offline (or both services down): station names from the downloaded timetable.
-  if (out.isEmpty && OfflinePack.instance.available) return offlineSource.locations(q).catchError((_) => <Place>[]);
-  return out.take(10).toList();
+  if (stations.isEmpty && extra.isEmpty && OfflinePack.instance.available) {
+    return offlineSource.locations(q).catchError((_) => <Place>[]);
+  }
+  return [...stations, ...extra];
 }

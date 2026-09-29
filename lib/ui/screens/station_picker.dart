@@ -84,7 +84,15 @@ class _StationPickerState extends State<StationPicker> {
       final near = await transitousSource.nearby(pos.latitude, pos.longitude);
       if (!mounted) return;
       if (near.isEmpty) throw s.noLocation;
-      setState(() => _items = near.take(8).toList());
+      // The exact position first (Transitous walks from there), then the nearest stops.
+      final here = Place(
+        name: s.myLocation,
+        lat: pos.latitude,
+        lon: pos.longitude,
+        kind: PlaceKind.place,
+        area: s.de ? 'Genaue Position' : 'Exact position',
+      );
+      setState(() => _items = [here, ...near.take(7)]);
     } catch (e) {
       if (mounted) setState(() => _error = e is String ? e : '${s.noLocation} ($e)');
     } finally {
@@ -145,7 +153,11 @@ class _StationPickerState extends State<StationPicker> {
           ],
           for (final p in _items)
             ListTile(
-              leading: const Icon(Icons.train_outlined),
+              leading: Icon(switch (p.kind) {
+                PlaceKind.stop => Icons.train_outlined,
+                PlaceKind.address => Icons.home_outlined,
+                PlaceKind.place => p.name == s.myLocation ? Icons.my_location : Icons.place_outlined,
+              }),
               title: Text(p.name),
               subtitle: (p.area?.isNotEmpty ?? false) ? Text(p.area!) : null,
               onTap: () => Navigator.pop(context, p),
