@@ -1,3 +1,13 @@
+import java.util.Properties
+
+// Release signing: android/key.properties locally (not in git), or environment variables on CI.
+val keyProps = Properties().apply {
+    val f = rootProject.file("key.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+fun signing(prop: String, env: String): String? = keyProps.getProperty(prop) ?: System.getenv(env)
+val releaseStore = signing("storeFile", "ANDROID_KEYSTORE_PATH")
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -29,11 +39,37 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (releaseStore != null) {
+            create("release") {
+                storeFile = file(releaseStore)
+                storePassword = signing("storePassword", "ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = signing("keyAlias", "ANDROID_KEY_ALIAS") ?: "anschluss"
+                keyPassword = signing("keyPassword", "ANDROID_KEY_PASSWORD") ?: storePassword
+            }
+        }
+    }
+
+    buildFeatures {
+        resValues = true
+    }
+
     buildTypes {
+        // Debug builds install next to the release app ("Anschluss Dev"), so testing never touches its data.
+        debug {
+            applicationIdSuffix = ".dev"
+            resValue("string", "app_name", "Anschluss Dev")
+        }
+        // Profile = release speed, but also installed next to the real app.
+        maybeCreate("profile").apply {
+            applicationIdSuffix = ".dev"
+            resValue("string", "app_name", "Anschluss Dev")
+        }
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            resValue("string", "app_name", "Anschluss")
+            // Own key when available (same key = updates install over each other); debug key otherwise,
+            // so the project still builds for anyone without the key.
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 }

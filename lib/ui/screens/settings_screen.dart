@@ -1,3 +1,4 @@
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
@@ -239,19 +240,37 @@ class SettingsScreen extends StatelessWidget {
 
           // ---------- appearance ----------
           header(s.appearance),
-          ListTile(
-            title: Text(s.theme),
-            trailing: SegmentedButton<int>(
-              showSelectedIcon: false,
-              segments: [
-                ButtonSegment(value: 0, label: Text(s.system)),
-                ButtonSegment(value: 1, label: Text(s.light)),
-                ButtonSegment(value: 2, label: Text(s.dark)),
-              ],
-              selected: {st.themeMode},
-              onSelectionChanged: (v) => set(st.copyWith(themeMode: v.first)),
-            ),
+          SwitchListTile(
+            secondary: const Icon(Icons.brightness_auto_outlined),
+            title: Text(s.de ? 'An System anpassen' : 'Follow the system'),
+            subtitle: Text(s.de ? 'Hell oder dunkel wie am Handy eingestellt' : 'Light or dark like your phone'),
+            value: st.themeMode == 0,
+            onChanged: (v) => set(st.copyWith(themeMode: v ? 0 : (MediaQuery.platformBrightnessOf(context) == Brightness.dark ? 2 : 1))),
           ),
+          if (st.themeMode != 0)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(72, 0, 16, 8),
+              child: SegmentedButton<int>(
+                segments: [
+                  ButtonSegment(value: 1, icon: const Icon(Icons.light_mode_outlined), label: Text(s.light)),
+                  ButtonSegment(value: 2, icon: const Icon(Icons.dark_mode_outlined), label: Text(s.dark)),
+                ],
+                selected: {st.themeMode},
+                onSelectionChanged: (v) => set(st.copyWith(themeMode: v.first)),
+              ),
+            ),
+          SwitchListTile(
+            secondary: const Icon(Icons.contrast),
+            title: const Text('AMOLED'),
+            subtitle: Text(
+              s.de
+                  ? 'Echtes Schwarz im dunklen Design – spart Akku bei OLED-Displays'
+                  : 'True black in dark mode – saves battery on OLED screens',
+            ),
+            value: st.amoled,
+            onChanged: (v) => set(st.copyWith(amoled: v)),
+          ),
+          const _ColorSettings(),
           ListTile(
             title: Text(s.language),
             trailing: SegmentedButton<AppLanguage>(
@@ -447,6 +466,85 @@ class _TileCacheTileState extends State<_TileCacheTile> {
           if (mounted) setState(() => _size = tileCacheBytes());
         },
       ),
+    );
+  }
+}
+
+/// Material You (system colours) or an own theme colour.
+class _ColorSettings extends StatelessWidget {
+  const _ColorSettings();
+
+  static const swatches = [
+    0xFF0B6E4F, // Anschluss green
+    0xFF1565C0, // blue
+    0xFF00838F, // teal
+    0xFF6A1B9A, // purple
+    0xFFAD1457, // pink
+    0xFFC62828, // red
+    0xFFEF6C00, // orange
+    0xFFF9A825, // amber
+    0xFF558B2F, // olive
+    0xFF455A64, // blue grey
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.store;
+    final st = store.settings;
+    final s = context.s;
+    return DynamicColorBuilder(
+      builder: (light, _) {
+        final available = light != null;
+        final usingSystem = st.dynamicColor && available;
+        return Column(
+          children: [
+            SwitchListTile(
+              secondary: const Icon(Icons.palette_outlined),
+              title: Text(s.de ? 'Systemfarben (Material You)' : 'System colours (Material You)'),
+              subtitle: Text(
+                available
+                    ? (s.de ? 'Farben aus deinem Hintergrundbild übernehmen' : 'Use the colours of your wallpaper')
+                    : (s.de ? 'Auf diesem Gerät nicht verfügbar (ab Android 12)' : 'Not available on this device (Android 12+)'),
+              ),
+              value: usingSystem,
+              onChanged: available ? (v) => store.updateSettings(st.copyWith(dynamicColor: v)) : null,
+            ),
+            if (!usingSystem)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final c in swatches)
+                      Semantics(
+                        label: '#${c.toRadixString(16).substring(2)}',
+                        selected: st.seedColor == c,
+                        button: true,
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: () => store.updateSettings(st.copyWith(seedColor: c)),
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: Color(c),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: st.seedColor == c ? Theme.of(context).colorScheme.onSurface : Colors.transparent,
+                                width: 3,
+                              ),
+                            ),
+                            child: st.seedColor == c ? const Icon(Icons.check, color: Colors.white, size: 20) : null,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

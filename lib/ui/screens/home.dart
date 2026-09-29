@@ -45,10 +45,24 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime? _searchedWhen;
 
   final _sheet = DraggableScrollableController();
-  double? _sheetFraction; // current sheet height as fraction of the screen, for map padding
-  static const _peekPx = 212.0; // grabber + compact search bar
+  static const _peekPx = 212.0; // grabber + compact search bar (plus the system gesture area)
   static const _halfFraction = 0.52;
   static const _fullFraction = 0.94;
+
+  // The sheet must get identical snap sizes on every rebuild: a new list makes it re-snap (and
+  // fight the finger) each time the screen rebuilds. Computed once per screen height.
+  double? _sheetHeight;
+  double _peekFraction = 0.25;
+  List<double> _snaps = const [0.25, _halfFraction, _fullFraction];
+
+  /// Sheet height in px, for map padding – only updated once the sheet has settled.
+  final _sheetPx = ValueNotifier<double>(0);
+  Timer? _settle;
+  bool _dragging = false;
+
+  // Search results arrive in bursts; repaint the list at most every 150 ms.
+  Timer? _paintTimer;
+  SearchResult? _pending;
 
   @override
   void initState() {
@@ -80,8 +94,9 @@ class _HomeScreenState extends State<HomeScreen> {
       _introShown = true;
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted) return;
-        await showIntro(context);
+        // Mark as seen right away, so it never shows twice (even if the app is closed meanwhile).
         store.updateSettings(store.settings.copyWith(seenIntro: true));
+        await showIntro(context);
       });
     }
   }
@@ -91,12 +106,15 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _sub?.cancel();
+    _settle?.cancel();
+    _paintTimer?.cancel();
+    _sheetPx.dispose();
     _sheet.dispose();
     super.dispose();
   }
 
   void _moveSheet(double fraction) {
-    if (!_sheet.isAttached) return;
+    if (!_sheet.isAttached || _dragging) return; // never fight the user's finger
     _sheet.animateTo(fraction, duration: const Duration(milliseconds: 320), curve: Curves.easeOutCubic);
   }
 
@@ -182,12 +200,15 @@ class _HomeScreenState extends State<HomeScreen> {
               r = SearchResult(merged, r.status, done: r.done, fetchedAt: r.fetchedAt);
             }
             last = r;
-            if (mounted) setState(() => _result = r);
+            _showThrottled(r);
           },
           onDone: () {
             if (!mounted) return;
             final r = last;
+            _paintTimer?.cancel();
+            _pending = null;
             setState(() {
+              if (r != null) _result = r;
               _searching = false;
               _loadingMore = false;
             });
@@ -208,6 +229,18 @@ class _HomeScreenState extends State<HomeScreen> {
             }
           },
         );
+  }
+
+  void _showThrottled(SearchResult r) {
+    _pending = r;
+    if (_paintTimer?.isActive ?? false) return;
+    if (mounted) setState(() => _result = r);
+    _pending = null;
+    _paintTimer = Timer(const Duration(milliseconds: 150), () {
+      final p = _pending;
+      _pending = null;
+      if (p != null && mounted) setState(() => _result = p);
+    });
   }
 
   /// Loads the connections right after the last one and adds them to the list.
@@ -300,20 +333,27 @@ class _HomeScreenState extends State<HomeScreen> {
         final topInset = media.padding.top;
         final pins = [?_from, ?_to];
 
-        final mapPadding = wide
-            ? EdgeInsets.only(left: 472, top: topInset)
-            : EdgeInsets.only(
-                top: topInset + 56,
-                bottom: ((_sheetFraction ?? _initialSheet(c.maxHeight)) * c.maxHeight).clamp(0, c.maxHeight * _halfFraction),
-              );
+        if (!wide) _ensureSnaps(c.maxHeight, media.viewPadding.bottom);
+        final trip = store.activeTrip;
 
-        final map = RouteMap(
-          journey: _mapJourney,
-          others: _result?.journeys ?? const [],
-          onSelect: (j) => _tapJourney(j, wide),
-          pins: pins,
-          padding: mapPadding,
-          rounded: false,
+        // The map rebuilds only when the sheet has settled (not while dragging).
+        final map = RepaintBoundary(
+          child: ValueListenableBuilder<double>(
+            valueListenable: _sheetPx,
+            builder: (context, sheetPx, _) => RouteMap(
+              journey: _mapJourney,
+              others: _result?.journeys ?? const [],
+              onSelect: (j) => _tapJourney(j, wide),
+              pins: pins,
+              padding: wide
+                  ? EdgeInsets.only(left: 472, top: topInset)
+                  : EdgeInsets.only(
+                      top: topInset + (trip != null ? 112 : 64),
+                      bottom: (sheetPx > 0 ? sheetPx : _peekFraction * c.maxHeight).clamp(0, c.maxHeight * _halfFraction),
+                    ),
+              rounded: false,
+            ),
+          ),
         );
 
         return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -343,11 +383,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   )
                 else ...[
                   Positioned(top: topInset + 8, left: 12, child: _topBar(context)),
+                  if (trip != null)
+                    Positioned(
+                      top: topInset + 64,
+                      left: 12,
+                      right: 72,
+                      child: _TripBar(trip: trip),
+                    ),
                   _bottomSheet(context, c.maxHeight),
                 ],
+                if (wide && trip != null) Positioned(bottom: 16, right: 16, width: 420, child: _TripBar(trip: trip)),
               ],
             ),
-            bottomNavigationBar: store.activeTrip == null ? null : _TripBar(trip: store.activeTrip!),
           ),
         );
       },
@@ -414,32 +461,36 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  double _peek(double height) => (_peekPx / height).clamp(0.12, 0.45);
-  double _initialSheet(double height) => _result != null ? _halfFraction : _peek(height);
+  void _ensureSnaps(double height, double bottomInset) {
+    if (_sheetHeight == height) return;
+    _sheetHeight = height;
+    _peekFraction = ((_peekPx + bottomInset) / height).clamp(0.12, 0.45);
+    _snaps = List.unmodifiable([_peekFraction, _halfFraction, _fullFraction]);
+  }
 
-  /// Updates the map padding once the sheet settles; per-pixel rebuilds while dragging would be janky.
+  /// Tracks the sheet: marks dragging and publishes its height for the map once it settles.
   bool _onSheet(DraggableScrollableNotification n) {
-    final f = n.extent;
-    if (_sheetFraction == null || (f - _sheetFraction!).abs() > 0.04) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _sheetFraction = f);
-      });
-    }
+    _dragging = true;
+    _settle?.cancel();
+    _settle = Timer(const Duration(milliseconds: 150), () {
+      _dragging = false;
+      final h = _sheetHeight;
+      if (h != null && mounted) _sheetPx.value = n.extent * h;
+    });
     return false;
   }
 
   Widget _bottomSheet(BuildContext context, double height) {
     final cs = Theme.of(context).colorScheme;
-    final peek = _peek(height);
     return NotificationListener<DraggableScrollableNotification>(
       onNotification: _onSheet,
       child: DraggableScrollableSheet(
         controller: _sheet,
-        initialChildSize: _initialSheet(height),
-        minChildSize: peek,
+        initialChildSize: _peekFraction,
+        minChildSize: _peekFraction,
         maxChildSize: _fullFraction,
         snap: true,
-        snapSizes: [peek, _halfFraction, _fullFraction],
+        snapSizes: _snaps,
         builder: (context, scroll) => Material(
           elevation: 12,
           color: cs.surface,
@@ -448,11 +499,13 @@ class _HomeScreenState extends State<HomeScreen> {
           clipBehavior: Clip.antiAlias,
           child: CustomScrollView(
             controller: scroll,
+            // Always scrollable, so the sheet can be dragged even when its content is short.
+            physics: const AlwaysScrollableScrollPhysics(parent: ClampingScrollPhysics()),
             slivers: [
               SliverToBoxAdapter(
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTap: () => _moveSheet(_sheet.size < _halfFraction ? _halfFraction : peek),
+                  onTap: () => _moveSheet(_sheet.size < _halfFraction - 0.01 ? _halfFraction : _peekFraction),
                   child: Center(
                     child: Container(
                       margin: const EdgeInsets.only(top: 10, bottom: 6),
@@ -479,6 +532,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final hi = _highlights(s);
     final firstDay = js.isEmpty ? null : js.map((j) => j.departure).reduce((a, b) => a.isBefore(b) ? a : b);
     final selected = _mapJourney?.id;
+    final durations = js.where((j) => !j.cancelled && !j.walkOnly).map((j) => j.duration).toList()..sort();
+    final range = durations.isEmpty ? null : (durations.first, durations.last);
 
     return [
       SliverPadding(
@@ -532,6 +587,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   highlight: hi[j.id],
                   selected: isSel,
                   firstDay: firstDay,
+                  durationRange: range,
                   onTap: () => _tapJourney(j, wide),
                 ),
                 if (isSel)
@@ -834,8 +890,12 @@ class _TripBar extends StatelessWidget {
     final next = j.departure.isAfter(DateTime.now()) ? j.departure : j.arrival;
     return Material(
       color: cs.primaryContainer,
+      elevation: 3,
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
       child: SafeArea(
         top: false,
+        bottom: false,
         child: InkWell(
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TripScreen(tripId: trip.id))),
           child: Padding(

@@ -1,5 +1,6 @@
 // Disk tile cache for Android, iOS, macOS and Linux.
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -11,7 +12,8 @@ import 'package:path_provider/path_provider.dart';
 
 import '../net.dart' show userAgent;
 
-const _maxAge = Duration(days: 30);
+/// Used when the server gives no caching headers (OSM tile policy: at least 7 days).
+const _defaultAge = Duration(days: 7);
 const _maxBytes = 300 * 1024 * 1024;
 
 class _TileStore {
@@ -42,18 +44,64 @@ class _TileStore {
   Future<File> _file(String url) async => File('${(await dir).path}/${_name(url)}.tile');
 
   /// Fresh from disk, else from the network (and stored), else stale from disk.
-  Future<Uint8List> get(String url, {bool refresh = false}) async {
+  File _meta(File tile) => File('${tile.path}.meta');
+
+  /// How long a response may be used, from Cache-Control max-age or Expires (tile.openstreetmap.org policy:
+  /// honour the caching headers; 7 days if there are none).
+  static DateTime _expiry(Map<String, String> h) {
+    final cc = h['cache-control'] ?? '';
+    final m = RegExp(r'(?:s-)?max-age=(\d+)').firstMatch(cc);
+    if (m != null) return DateTime.now().add(Duration(seconds: int.parse(m.group(1)!)));
+    final exp = h['expires'];
+    if (exp != null) {
+      try {
+        return HttpDate.parse(exp);
+      } catch (_) {}
+    }
+    return DateTime.now().add(_defaultAge);
+  }
+
+  /// Fresh from disk; else revalidated with a conditional request (ETag / Last-Modified); else stale from disk.
+  Future<Uint8List> get(String url) async {
     final f = await _file(url);
-    FileStat? stat;
+    final metaFile = _meta(f);
+    final exists = await f.exists();
+    Map<String, dynamic> meta = const {};
+    if (exists) {
+      try {
+        meta = jsonDecode(await metaFile.readAsString()) as Map<String, dynamic>;
+      } catch (_) {}
+      final expires = DateTime.tryParse(meta['expires'] as String? ?? '');
+      if (expires != null && DateTime.now().isBefore(expires)) return f.readAsBytes();
+    }
     try {
-      stat = await f.stat();
-    } catch (_) {}
-    final exists = stat != null && stat.type == FileSystemEntityType.file;
-    if (exists && !refresh && DateTime.now().difference(stat.modified) < _maxAge) return f.readAsBytes();
-    try {
-      final res = await _client.get(Uri.parse(url), headers: {'User-Agent': userAgent}).timeout(const Duration(seconds: 12));
+      final res = await _client
+          .get(
+            Uri.parse(url),
+            headers: {
+              'User-Agent': userAgent,
+              if (exists && meta['etag'] != null) 'If-None-Match': meta['etag'] as String,
+              if (exists && meta['lastModified'] != null) 'If-Modified-Since': meta['lastModified'] as String,
+            },
+          )
+          .timeout(const Duration(seconds: 12));
+      if (res.statusCode == 304 && exists) {
+        // Unchanged: keep the tile, extend its lifetime.
+        unawaited(metaFile.writeAsString(jsonEncode({...meta, 'expires': _expiry(res.headers).toIso8601String()})));
+        return await f.readAsBytes();
+      }
       if (res.statusCode != 200 || res.bodyBytes.isEmpty) throw HttpException('HTTP ${res.statusCode}');
-      unawaited(f.writeAsBytes(res.bodyBytes, flush: false).then((_) => _maybePrune()));
+      unawaited(() async {
+        await f.writeAsBytes(res.bodyBytes, flush: false);
+        await metaFile.writeAsString(
+          jsonEncode({
+            'expires': _expiry(res.headers).toIso8601String(),
+            if (res.headers['etag'] != null) 'etag': res.headers['etag'],
+            if (res.headers['last-modified'] != null) 'lastModified': res.headers['last-modified'],
+          }),
+        );
+        await _maybePrune();
+      }());
       return res.bodyBytes;
     } catch (e) {
       if (exists) return f.readAsBytes(); // offline: an old tile beats an empty map

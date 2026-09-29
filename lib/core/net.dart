@@ -8,7 +8,9 @@ import 'dart:math';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
-const userAgent = 'anschluss-app/0.1 (personal journey planner; github.com/bjarnepw/anschluss)';
+/// Keep in sync with pubspec.yaml. Stable product name + contact, as the OSM tile policy and Transitous ask.
+const appVersion = '0.3.0';
+const userAgent = 'Anschluss/$appVersion (+https://github.com/bjarnepw/anschluss)';
 
 /// An error the user should see in plain words, plus whether retrying makes sense.
 class SourceException implements Exception {

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="768" height="768"><g id="glyph" transform="translate(1.25 0)"><g fill="none" stroke="#FFFFFF" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- main track -->
+    <path d="M62 80 L62 44"/>
+    <!-- branch line curving in through the switch -->
+    <path d="M38 80 L38 70 C38 58 62 60 62 48"/>
+  </g>
+  <!-- station where the lines connect -->
+  <circle cx="62" cy="34" r="9.5" fill="#FFFFFF"/>
+  <circle cx="62" cy="34" r="4" fill="#0F7F5B"/>
+</g></svg>

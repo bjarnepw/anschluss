@@ -60,6 +60,8 @@ jobs:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms != 'none' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    env:
+      HAS_ANDROID_KEY: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -98,6 +100,15 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      # Same key for every release, so new versions install as updates over old ones.
+      - name: Android signing key
+        if: steps.gate.outputs.run == 'true' && matrix.platform == 'android' && env.HAS_ANDROID_KEY == 'true'
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
       - name: Linux build dependencies
         if: steps.gate.outputs.run == 'true' && matrix.platform == 'linux'
         run: |
@@ -117,6 +128,9 @@ jobs:
       - name: Build
         if: steps.gate.outputs.run == 'true'
         shell: bash
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           flutter pub get
           # Release files get readable names: anschluss-<version>-<platform>…

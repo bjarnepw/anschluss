@@ -1,13 +1,14 @@
 name: anschluss
 description: "Every train in Germany in one search: DB, FlixTrain, ÖBB and all regional operators, with prices and maps."
 publish_to: 'none'
-version: 0.2.0+2
+version: 0.3.0+3
 
 environment:
   sdk: ^3.13.0
 
 dependencies:
   archive: ^4.3.0
+  dynamic_color: ^1.9.0 # 2.x is built on the standalone material_ui package, incompatible with flutter/material
   flutter:
     sdk: flutter
   flutter_map: ^8.3.2
@@ -22,6 +23,45 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+  flutter_native_splash: ^2.4.8
 
 flutter:
   uses-material-design: true
+
+# App icon: `dart run flutter_launcher_icons`
+flutter_launcher_icons:
+  image_path: assets/icon/icon_full.png
+  android: true
+  adaptive_icon_background: "#0F7F5B"
+  adaptive_icon_foreground: assets/icon/icon_foreground.png
+  # Android 13+ themed icons (tinted with the system colours)
+  adaptive_icon_monochrome: assets/icon/icon_monochrome.png
+  ios: true
+  remove_alpha_ios: true
+  web:
+    generate: true
+    image_path: assets/icon/icon_full.png
+    background_color: "#0F7F5B"
+    theme_color: "#0F7F5B"
+  macos:
+    generate: true
+    image_path: assets/icon/icon_full.png
+  linux:
+    generate: true
+    image_path: assets/icon/icon_full.png
+
+# Splash screen: `dart run flutter_native_splash:create`
+flutter_native_splash:
+  color: "#0F7F5B"
+  image: assets/icon/splash.png
+  color_dark: "#0B3D2E"
+  image_dark: assets/icon/splash.png
+  android_12:
+    image: assets/icon/splash.png
+    icon_background_color: "#0F7F5B"
+    color: "#0F7F5B"
+    image_dark: assets/icon/splash.png
+    icon_background_color_dark: "#0B3D2E"
+    color_dark: "#0B3D2E"
+  web: true

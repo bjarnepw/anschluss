@@ -254,7 +254,18 @@ class JourneyCard extends StatelessWidget {
   final VoidCallback? onTap;
   final DateTime? firstDay;
 
-  const JourneyCard({super.key, required this.journey, this.highlight, this.selected = false, this.onTap, this.firstDay});
+  /// Fastest and slowest duration among the results shown – colours the duration capsule.
+  final (int, int)? durationRange;
+
+  const JourneyCard({
+    super.key,
+    required this.journey,
+    this.highlight,
+    this.selected = false,
+    this.onTap,
+    this.firstDay,
+    this.durationRange,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -306,17 +317,19 @@ class JourneyCard extends StatelessWidget {
                               if (dd > 0) Text(' +$dd', style: t.labelSmall?.copyWith(color: cs.error)),
                             ],
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            [
-                              fmtDur(j.duration),
-                              j.transfers == 0 ? s.direct : s.changes(j.transfers),
-                              firstTransit.line,
-                              if (otherDay) fmtDate(j.departure, s.de),
-                            ].join(' · '),
-                            style: t.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              Capsule(icon: Icons.schedule, text: fmtDur(j.duration), color: speedColor(j.duration, durationRange)),
+                              Capsule(
+                                icon: j.walkOnly ? Icons.directions_walk : Icons.swap_horiz,
+                                text: j.walkOnly ? s.sourceLabel('walk') : (j.transfers == 0 ? s.direct : s.changes(j.transfers)),
+                                color: j.transfers == 0 && !j.walkOnly ? cs.tertiary : null,
+                              ),
+                              if (otherDay) Capsule(icon: Icons.event, text: fmtDate(j.departure, s.de)),
+                            ],
                           ),
                         ],
                       ),
@@ -336,6 +349,53 @@ class JourneyCard extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Material colour for how fast a connection is compared to the others:
+/// green = among the fastest … red = among the slowest. Null (neutral) without a comparison.
+Color? speedColor(int minutes, (int, int)? range) {
+  if (range == null) return null;
+  final (min, max) = range;
+  if (max - min < 5) return Colors.green.shade600; // all about equally fast
+  final t = ((minutes - min) / (max - min)).clamp(0.0, 1.0);
+  if (t < 0.15) return Colors.green.shade600;
+  if (t < 0.35) return Colors.lightGreen.shade700;
+  if (t < 0.6) return Colors.amber.shade700;
+  if (t < 0.8) return Colors.orange.shade700;
+  return Colors.red.shade600;
+}
+
+/// Small rounded label: tinted background, icon + text in the accent colour.
+class Capsule extends StatelessWidget {
+  final IconData? icon;
+  final String text;
+  final Color? color;
+  const Capsule({super.key, this.icon, required this.text, this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final accent = color;
+    final fg = accent == null
+        ? cs.onSurfaceVariant
+        : (dark ? Color.lerp(accent, Colors.white, 0.35)! : Color.lerp(accent, Colors.black, 0.25)!);
+    final bg = accent == null ? cs.surfaceContainerHighest : accent.withValues(alpha: dark ? 0.22 : 0.14);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 4, 10, 4),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[Icon(icon, size: 14, color: fg), const SizedBox(width: 4)],
+          Text(
+            text,
+            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: fg, height: 1.2),
+          ),
+        ],
       ),
     );
   }

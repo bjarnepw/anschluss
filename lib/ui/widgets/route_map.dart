@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/tiles/tile_cache.dart';
 import '../../models/journey.dart';
@@ -93,17 +94,53 @@ class _RouteMapState extends State<RouteMap> {
   @override
   void didUpdateWidget(RouteMap old) {
     super.didUpdateWidget(old);
+    // Move the camera only when what the user looks at changes (another connection, other stations) –
+    // never because results stream in or the sheet moves; that made the map jump around.
     final pinsChanged = widget.journey == null && !_samePins(old.pins, widget.pins);
-    final paddingChanged = (old.padding.bottom - widget.padding.bottom).abs() > 40 || old.padding.left != widget.padding.left;
-    if (old.journey?.id != widget.journey?.id) _loadTrack();
-    final setChanged = _ids(old) != _ids(widget);
-    final selectionOnly = !setChanged && old.journey?.id != widget.journey?.id;
-    if (_ready && (setChanged || selectionOnly || pinsChanged || paddingChanged)) {
+    final selectionChanged = old.journey?.id != widget.journey?.id;
+    if (selectionChanged) _loadTrack();
+    if (_ready && (selectionChanged || pinsChanged)) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _fit(animate: true));
     }
   }
 
-  String _ids(RouteMap w) => [w.journey?.id, ...w.others.map((j) => j.id)].whereType<String>().toSet().join('|');
+  // Faded alternatives are cached: rebuilding thousands of points on every frame made the map stutter.
+  List<Polyline<String>> _fadedCache = const [];
+  String _fadedKey = '';
+
+  List<Polyline<String>> _faded(Brightness b) {
+    final j = widget.journey;
+    final key = '${b.name}|${j?.id}|${widget.others.map((o) => '${o.id}:${o.legs.where((l) => l.pathExact).length}').join(',')}';
+    if (key == _fadedKey) return _fadedCache;
+    final out = <Polyline<String>>[];
+    for (final o in widget.others) {
+      if (o.id == j?.id) continue;
+      for (final l in o.legs) {
+        if (l.path.length < 2 || l.isWalk) continue;
+        out.add(
+          Polyline<String>(
+            points: _thin(l.path, 150),
+            color: lineColor(l, b).withValues(alpha: 0.3),
+            strokeWidth: 4,
+            pattern: l.pathExact ? const StrokePattern.solid() : StrokePattern.dashed(segments: const [10, 8]),
+            hitValue: o.id,
+          ),
+        );
+      }
+    }
+    _fadedKey = key;
+    return _fadedCache = out;
+  }
+
+  /// Keeps at most [max] points (first and last always) – plenty for a faded background line.
+  static List<LatLng> _thin(List<List<double>> path, int max) {
+    if (path.length <= max) return [for (final p in path) LatLng(p[0], p[1])];
+    final step = path.length / (max - 1);
+    return [
+      for (var i = 0; i < max - 1; i++) LatLng(path[(i * step).floor()][0], path[(i * step).floor()][1]),
+      LatLng(path.last[0], path.last[1]),
+    ];
+  }
 
   bool _samePins(List<Place> a, List<Place> b) => a.length == b.length && [for (var i = 0; i < a.length; i++) a[i] == b[i]].every((x) => x);
 
@@ -168,22 +205,7 @@ class _RouteMapState extends State<RouteMap> {
     );
 
     // Alternatives: faded, thinner, no casing, drawn first so the selected journey sits on top.
-    final faded = <Polyline<String>>[];
-    for (final o in widget.others) {
-      if (o.id == j?.id) continue;
-      for (final l in o.legs) {
-        if (l.path.length < 2 || l.isWalk) continue;
-        faded.add(
-          Polyline<String>(
-            points: l.path.map((p) => LatLng(p[0], p[1])).toList(),
-            color: lineColor(l, b).withValues(alpha: 0.3),
-            strokeWidth: 4,
-            pattern: l.pathExact ? const StrokePattern.solid() : StrokePattern.dashed(segments: const [10, 8]),
-            hitValue: o.id,
-          ),
-        );
-      }
-    }
+    final faded = _faded(b);
 
     if (j != null) {
       for (final l in j.legs) {
@@ -311,7 +333,7 @@ class _RouteMapState extends State<RouteMap> {
         ],
         Padding(
           padding: EdgeInsets.only(bottom: widget.padding.bottom, left: widget.padding.left),
-          child: const SimpleAttributionWidget(source: Text('OpenStreetMap, OpenRailwayMap')),
+          child: _Attribution(rail: _rail, custom: AppScope.read(context).settings.tileUrl.isNotEmpty),
         ),
       ],
     );
@@ -355,5 +377,46 @@ class _RouteMapState extends State<RouteMap> {
 
     final stack = Stack(children: [map, controls]);
     return widget.rounded ? ClipRRect(borderRadius: BorderRadius.circular(16), child: stack) : stack;
+  }
+}
+
+/// Always-visible licence attribution (OSM tile policy) with a "report a map issue" link.
+class _Attribution extends StatelessWidget {
+  final bool rail;
+  final bool custom;
+  const _Attribution({required this.rail, required this.custom});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final s = context.s;
+    final style = TextStyle(fontSize: 11, color: cs.onSurface);
+    final link = style.copyWith(color: cs.primary, decoration: TextDecoration.underline, decorationColor: cs.primary);
+    Future<void> open(String u) => launchUrl(Uri.parse(u), mode: LaunchMode.externalApplication);
+    return Align(
+      alignment: Alignment.bottomRight,
+      child: Container(
+        margin: const EdgeInsets.all(4),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(color: cs.surface.withValues(alpha: 0.85), borderRadius: BorderRadius.circular(6)),
+        child: Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            GestureDetector(
+              onTap: () => open('https://www.openstreetmap.org/copyright'),
+              child: Text('© OpenStreetMap contributors', style: style),
+            ),
+            if (rail) Text(' · OpenRailwayMap', style: style),
+            if (!custom) ...[
+              Text(' · ', style: style),
+              GestureDetector(
+                onTap: () => open('https://www.openstreetmap.org/fixthemap'),
+                child: Text(s.de ? 'Kartenfehler melden' : 'Report a map issue', style: link),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }

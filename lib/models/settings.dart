@@ -30,7 +30,17 @@ class Settings {
   final SortMode defaultSort;
 
   /// 0 = system, 1 = light, 2 = dark
+  /// 0 = follow the system (light/dark), 1 = light, 2 = dark.
   final int themeMode;
+
+  /// Pure black backgrounds in dark mode (AMOLED).
+  final bool amoled;
+
+  /// Use the Android system colours (Material You) when available.
+  final bool dynamicColor;
+
+  /// Own theme colour (ARGB), used when [dynamicColor] is off or not available.
+  final int seedColor;
   final AppLanguage language;
 
   /// Web builds only: CORS proxy prefix for DB/ÖBB, e.g. http://localhost:8787/
@@ -75,6 +85,9 @@ class Settings {
     this.sources = allSources,
     this.defaultSort = SortMode.best,
     this.themeMode = 0,
+    this.amoled = false,
+    this.dynamicColor = true,
+    this.seedColor = 0xFF0B6E4F,
     this.language = AppLanguage.de,
     this.webProxy = '',
     this.trackRefreshSeconds = 60,
@@ -101,6 +114,9 @@ class Settings {
     List<String>? sources,
     SortMode? defaultSort,
     int? themeMode,
+    bool? amoled,
+    bool? dynamicColor,
+    int? seedColor,
     AppLanguage? language,
     String? webProxy,
     int? trackRefreshSeconds,
@@ -125,6 +141,9 @@ class Settings {
     sources: sources ?? this.sources,
     defaultSort: defaultSort ?? this.defaultSort,
     themeMode: themeMode ?? this.themeMode,
+    amoled: amoled ?? this.amoled,
+    dynamicColor: dynamicColor ?? this.dynamicColor,
+    seedColor: seedColor ?? this.seedColor,
     language: language ?? this.language,
     webProxy: webProxy ?? this.webProxy,
     trackRefreshSeconds: trackRefreshSeconds ?? this.trackRefreshSeconds,
@@ -151,6 +170,9 @@ class Settings {
     'sources': sources,
     'defaultSort': defaultSort.name,
     'themeMode': themeMode,
+    'amoled': amoled,
+    'dynamicColor': dynamicColor,
+    'seedColor': seedColor,
     'language': language.name,
     'webProxy': webProxy,
     'trackRefreshSeconds': trackRefreshSeconds,
@@ -179,7 +201,10 @@ class Settings {
       age: j['age'] is int ? j['age'] as int : null,
       sources: j['sources'] is List ? (j['sources'] as List).whereType<String>().where(allSources.contains).toList() : d.sources,
       defaultSort: SortMode.values.firstWhere((s) => s.name == j['defaultSort'], orElse: () => d.defaultSort),
-      themeMode: pick('themeMode', d.themeMode),
+      themeMode: pick('themeMode', d.themeMode).clamp(0, 2),
+      amoled: pick('amoled', d.amoled),
+      dynamicColor: pick('dynamicColor', d.dynamicColor),
+      seedColor: pick('seedColor', d.seedColor),
       language: AppLanguage.values.firstWhere((s) => s.name == j['language'], orElse: () => d.language),
       webProxy: pick('webProxy', d.webProxy),
       trackRefreshSeconds: pick('trackRefreshSeconds', d.trackRefreshSeconds).clamp(30, 600),

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="1024" height="1024"><g id="glyph" transform="translate(1.25 0)"><g fill="none" stroke="#000000" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- main track -->
+    <path d="M62 80 L62 44"/>
+    <!-- branch line curving in through the switch -->
+    <path d="M38 80 L38 70 C38 58 62 60 62 48"/>
+  </g>
+  <!-- station where the lines connect -->
+  <path fill="#000000" fill-rule="evenodd" d="M62 24.5a9.5 9.5 0 1 1 0 19a9.5 9.5 0 1 1 0-19zM62 30a4 4 0 1 0 0 8a4 4 0 1 0 0-8z"/>
+</g></svg>
