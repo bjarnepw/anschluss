@@ -51,10 +51,7 @@ class _TransferRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          SizedBox(
-            width: 52,
-            child: Icon(bad ? Icons.warning_amber_rounded : Icons.transfer_within_a_station, size: 18, color: color),
-          ),
+          SizedBox(width: 52, child: Icon(bad ? Icons.warning_amber_rounded : Icons.transfer_within_a_station, size: 18, color: color)),
           Expanded(
             child: Text(
               '${s.transfer(t.minutes, t.walkMinutes)}$otherStation$platformChange${bad ? ' – ${s.missedTransfer}' : ''}',
@@ -80,9 +77,17 @@ class _WalkRow extends StatelessWidget {
     final c = lineColor(leg, Theme.of(context).brightness);
     Widget point(DateTime time, String name) => Row(
       children: [
-        SizedBox(width: 52, child: Text(fmtTime(time), style: t.titleSmall?.copyWith(fontWeight: FontWeight.w700))),
+        SizedBox(
+          width: 52,
+          child: Text(fmtTime(time), style: t.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+        ),
         Expanded(
-          child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+          child: Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: t.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+          ),
         ),
       ],
     );
@@ -98,7 +103,9 @@ class _WalkRow extends StatelessWidget {
               children: [
                 SizedBox(
                   width: 52,
-                  child: Center(child: SizedBox(width: 6, child: CustomPaint(painter: _DotsPainter(c)))),
+                  child: Center(
+                    child: SizedBox(width: 6, child: CustomPaint(painter: _DotsPainter(c))),
+                  ),
                 ),
                 Expanded(
                   child: Padding(

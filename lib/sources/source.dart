@@ -30,6 +30,9 @@ class SearchOptions {
   /// Only local/regional trains and buses (Deutschlandticket modes) – used for Flix feeders.
   final bool regionalOnly;
 
+  /// Train types the user switched off (Verkehrsmittel).
+  final Set<Mode> excludedModes;
+
   const SearchOptions({
     required this.when,
     this.arriveBy = false,
@@ -48,7 +51,11 @@ class SearchOptions {
     this.walkOnlyMaxMinutes = 30,
     this.moreAlternatives = true,
     this.regionalOnly = false,
+    this.excludedModes = const {},
   });
+
+  /// No leg of [j] uses a train type the user switched off.
+  bool allows(Journey j) => excludedModes.isEmpty || !j.legs.any((l) => excludedModes.contains(l.mode));
 
   /// For follow-up searches: never offers walking the whole way.
   SearchOptions copyWith({DateTime? when, int? results, bool? dticketOnly, bool? moreAlternatives, bool? regionalOnly}) => SearchOptions(
@@ -69,6 +76,7 @@ class SearchOptions {
     walkOnlyMaxMinutes: walkOnlyMaxMinutes,
     moreAlternatives: moreAlternatives ?? this.moreAlternatives,
     regionalOnly: regionalOnly ?? this.regionalOnly,
+    excludedModes: excludedModes,
   );
 
   factory SearchOptions.from(Settings s, DateTime when, {bool arriveBy = false}) => SearchOptions(
@@ -88,6 +96,10 @@ class SearchOptions {
     walkOnlyMaxMinutes: s.walkOnlyMaxMinutes,
     moreAlternatives: s.moreAlternatives,
     results: s.moreAlternatives ? 8 : 6,
+    excludedModes: {
+      for (final m in Mode.values)
+        if (s.excludedModes.contains(m.name)) m,
+    },
   );
 }
 

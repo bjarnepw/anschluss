@@ -53,6 +53,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       results: 4,
       moreAlternatives: false,
       includeWalking: false,
+      excludedModes: SearchOptions.from(st, DateTime.now()).excludedModes,
     );
     final wanted = st.offlineOnly ? const ['offline'] : st.sources.where((x) => x == 'transitous' || x == 'db').toList();
     SearchResult? last;

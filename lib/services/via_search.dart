@@ -25,6 +25,7 @@ SearchOptions _at(SearchOptions o, DateTime when) => SearchOptions(
   maxWalkMinutes: o.maxWalkMinutes,
   includeWalking: false,
   moreAlternatives: false,
+  excludedModes: o.excludedModes,
 );
 
 /// Joins two consecutive journeys (the second starts where the first ends).

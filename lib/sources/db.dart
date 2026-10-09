@@ -20,6 +20,24 @@ const _products = {
   'ANRUFPFLICHTIG': Mode.bus, 'ANRUFPFLICHTIGEVERKEHRE': Mode.bus,
 };
 
+/// DB product codes for the train types the user kept (Verkehrsmittel).
+List<String> _verkehrsmittel(Set<Mode> off) {
+  if (off.isEmpty) return const ['ALL'];
+  const codes = {
+    Mode.long: ['ICE', 'EC_IC', 'IR'],
+    Mode.regional: ['REGIONAL'],
+    Mode.suburban: ['SBAHN'],
+    Mode.metro: ['UBAHN'],
+    Mode.tram: ['TRAM'],
+    Mode.bus: ['BUS', 'ANRUFPFLICHTIG'],
+    Mode.ferry: ['SCHIFF'],
+  };
+  return [
+    for (final e in codes.entries)
+      if (!off.contains(e.key)) ...e.value,
+  ];
+}
+
 String _uuid() {
   final r = Random.secure();
   final b = List<int>.generate(16, (_) => r.nextInt(256));
@@ -145,7 +163,7 @@ class DbSource implements Source, LocationSource {
       'reiseHin': {
         'wunsch': {
           'abgangsLocationId': 'A=1@L=${ids[0]}@',
-          'verkehrsmittel': ['ALL'],
+          'verkehrsmittel': _verkehrsmittel(opts.excludedModes),
           'alternativeHalteBerechnung': true,
           'zeitWunsch': {'reiseDatum': cetIso(opts.when), 'zeitPunktArt': opts.arriveBy ? 'ANKUNFT' : 'ABFAHRT'},
           'zielLocationId': 'A=1@L=${ids[1]}@',

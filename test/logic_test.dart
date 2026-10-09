@@ -4,6 +4,7 @@ import 'package:anschluss/models/settings.dart';
 import 'package:anschluss/services/merge.dart';
 import 'package:anschluss/services/tricks.dart';
 import 'package:anschluss/services/via_search.dart';
+import 'package:anschluss/sources/source.dart';
 import 'package:anschluss/ui/line_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -291,11 +292,9 @@ void main() {
         Stopover(name: 'München Hbf', lat: 48.14, lon: 11.56), // far off the way
       ],
     );
-    final hubs = trickHubs(
-      const Place(name: 'Berlin', lat: 52.52, lon: 13.37),
-      const Place(name: 'Köln', lat: 50.94, lon: 6.96),
-      [Journey(source: 'db', dticket: false, legs: [ice(0, 270)])],
-    );
+    final hubs = trickHubs(const Place(name: 'Berlin', lat: 52.52, lon: 13.37), const Place(name: 'Köln', lat: 50.94, lon: 6.96), [
+      Journey(source: 'db', dticket: false, legs: [ice(0, 270)]),
+    ]);
     expect(hubs.map((h) => h.place.name), ['Hannover Hbf']);
     expect(hubs.single.onLongLeg, isTrue);
   });
@@ -313,5 +312,14 @@ void main() {
     expect(calls, 1);
     await expectLater(c.get<int>('e', const Duration(minutes: 1), () async => throw Exception('down')), throwsException);
     expect(await c.get('e', const Duration(minutes: 1), () async => 1), 1);
+  });
+
+  test('train types: switched-off groups are saved and filter results', () {
+    final st = Settings.fromJson(const Settings(excludedModes: ['long', 'night']).toJson());
+    final opts = SearchOptions.from(st, DateTime.utc(2026, 10, 9, 8));
+    expect(opts.excludedModes, {Mode.long, Mode.night});
+    Journey j(Mode m) => Journey(source: 'db', dticket: false, legs: [leg('X 1', m, 0, 60)]);
+    expect(opts.allows(j(Mode.regional)), isTrue);
+    expect(opts.allows(j(Mode.long)), isFalse);
   });
 }

@@ -764,6 +764,12 @@ class _HomeScreenState extends State<HomeScreen> {
               onReset: when == null ? null : () => setState(() => _when = null),
             ),
             IconButton.filledTonal(
+              tooltip: s.modes,
+              isSelected: store.settings.excludedModes.isNotEmpty,
+              icon: const Icon(Icons.train_outlined),
+              onPressed: _pickModes,
+            ),
+            IconButton.filledTonal(
               tooltip: s.de ? 'Zwischenhalt hinzufügen' : 'Add a stop',
               icon: const Icon(Icons.add_location_alt_outlined),
               onPressed: _vias.length >= 3 ? null : _addVia,
@@ -825,6 +831,58 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
+  }
+
+  /// Verkehrsmittel: which train types to use. Saved, and searched again right away.
+  Future<void> _pickModes() async {
+    final store = context.store;
+    final before = store.settings.excludedModes.join(',');
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => ListenableBuilder(
+        listenable: store,
+        builder: (context, _) {
+          final s = context.s;
+          final off = store.settings.excludedModes.toSet();
+          bool on(String g) => !modeGroups[g]!.every(off.contains);
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(s.modes, style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final g in modeGroups.keys)
+                        FilterChip(
+                          label: Text(s.modeGroup(g)),
+                          selected: on(g),
+                          // At least one type stays on.
+                          onSelected: on(g) && modeGroups.keys.where(on).length == 1
+                              ? null
+                              : (v) => store.updateSettings(
+                                  store.settings.copyWith(
+                                    excludedModes: v ? (off..removeAll(modeGroups[g]!)).toList() : (off..addAll(modeGroups[g]!)).toList(),
+                                  ),
+                                ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (!mounted || store.settings.excludedModes.join(',') == before) return;
+    if (_from != null && _to != null) _search();
   }
 
   Future<void> _addVia() async {

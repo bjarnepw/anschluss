@@ -118,6 +118,7 @@ class _TripScreenState extends State<TripScreen> {
       includeWalking: opts.includeWalking,
       // On the way the fastest way on counts, not split tickets and other cheap tricks.
       moreAlternatives: false,
+      excludedModes: opts.excludedModes,
     );
     SearchResult? last;
     try {

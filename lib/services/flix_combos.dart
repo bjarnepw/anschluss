@@ -98,7 +98,14 @@ class FlixCombos {
             sources: ['flix'],
             legs: j.legs,
             prices: [
-              Price(amount: price.amount, source: 'flix', partial: !whole, url: price.url, seats: price.seats, covers: whole ? null : leg.line),
+              Price(
+                amount: price.amount,
+                source: 'flix',
+                partial: !whole,
+                url: price.url,
+                seats: price.seats,
+                covers: whole ? null : leg.line,
+              ),
             ],
             dticket: false,
             soldOut: ride!.soldOut,
@@ -282,6 +289,7 @@ SearchOptions _with(
   includeWalking: o.includeWalking,
   moreAlternatives: o.moreAlternatives,
   regionalOnly: regionalOnly,
+  excludedModes: o.excludedModes,
 );
 
 /// Keeps only combos that are not clearly worse than something already found.

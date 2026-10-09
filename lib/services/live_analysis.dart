@@ -56,8 +56,7 @@ class LiveAnalysis {
   /// The delay that counts: official, unless your position says it's worse.
   int get effectiveDelay => max(officialDelay, gpsDelay ?? officialDelay);
 
-  bool get atRisk =>
-      cancelled != null || risks.any((r) => r.buffer < 0) || (reachStation != null && reachStation!.$1 > reachStation!.$2);
+  bool get atRisk => cancelled != null || risks.any((r) => r.buffer < 0) || (reachStation != null && reachStation!.$1 > reachStation!.$2);
 }
 
 /// Timeline of a leg: each stop with its time and its distance along the leg's path.

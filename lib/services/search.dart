@@ -78,6 +78,8 @@ Stream<SearchResult> searchJourneys(
       merged = merged.where((j) => (j.tightestBuffer ?? 999) >= opts.minTransferMinutes).toList();
     }
     if (opts.maxTransfers != null) merged = merged.where((j) => j.transfers <= opts.maxTransfers!).toList();
+    // Train types switched off: DB and Transitous already got the filter; this covers ÖBB, Flix, offline, tricks.
+    merged = merged.where(opts.allows).toList();
     merged = pruneImplausible(merged, from, to);
     // Walking the whole way: only show it when it can compete with the trains.
     final fastest = merged
@@ -272,6 +274,7 @@ Future<List<Journey>> _viaStations(Source src, Place from, Place to, SearchOptio
     maxWalkMinutes: opts.maxWalkMinutes,
     includeWalking: false,
     moreAlternatives: opts.moreAlternatives,
+    excludedModes: opts.excludedModes,
   );
   final list = await src.journeys(a, b, shifted);
   return [

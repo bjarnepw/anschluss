@@ -57,9 +57,8 @@ class S {
   String walkMin(int m, double? dist) => de
       ? 'Fußweg $m min${dist != null && dist > 0 ? ', ${dist.round()} m' : ''}'
       : 'Walk $m min${dist != null && dist > 0 ? ', ${dist.round()} m' : ''}';
-  String transfer(int m, int walk) => de
-      ? 'Umstieg $m min${walk > 0 ? ' · $walk min Fußweg' : ''}'
-      : 'Change $m min${walk > 0 ? ' · $walk min walk' : ''}';
+  String transfer(int m, int walk) =>
+      de ? 'Umstieg $m min${walk > 0 ? ' · $walk min Fußweg' : ''}' : 'Change $m min${walk > 0 ? ' · $walk min walk' : ''}';
   String towards(String d) => de ? 'Richtung $d' : 'towards $d';
   String platform(String p) => de ? 'Gl. $p' : 'Pl. $p';
   String stopsBetween(int n) => de ? '$n Zwischenhalt${n == 1 ? '' : 'e'}' : '$n stop${n == 1 ? '' : 's'} in between';
@@ -78,6 +77,7 @@ class S {
     final saves = t.saves;
     return saves == null || saves <= 0 ? what : '$what · ${_('${eur(saves)} günstiger', '${eur(saves)} cheaper')}';
   }
+
   String get oebbTickets => _('ÖBB-Tickets', 'ÖBB tickets');
   String get track => _('Verfolgen', 'Track');
   String get stopTracking => _('Nicht mehr verfolgen', 'Stop tracking');
@@ -88,6 +88,14 @@ class S {
     'Connection not found anymore – it may be cancelled. Look for alternatives?',
   );
   String get alternatives => _('Alternativen', 'Alternatives');
+  String get modes => _('Verkehrsmittel', 'Train types');
+  String modeGroup(String g) => switch (g) {
+    'long' => _('Fernverkehr (ICE, IC/EC, Nachtzug)', 'Long distance (ICE, IC/EC, night)'),
+    'regional' => _('Regionalverkehr (RE, RB)', 'Regional (RE, RB)'),
+    'suburban' => 'S-Bahn',
+    'metro' => _('U-Bahn und Tram', 'Metro and tram'),
+    _ => _('Bus und Fähre', 'Bus and ferry'),
+  };
   String vsPlan(int min) => min < -1
       ? _('${-min} min früher als dein Plan', '${-min} min earlier than your plan')
       : min > 1

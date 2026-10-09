@@ -83,8 +83,14 @@ class LiveNotifier {
     if (!_ready) return;
     try {
       await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.requestNotificationsPermission();
-      await _plugin.resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()?.requestPermissions(alert: true, sound: true);
-      await _plugin.resolvePlatformSpecificImplementation<MacOSFlutterLocalNotificationsPlugin>()?.requestPermissions(alert: true, sound: true);
+      await _plugin.resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()?.requestPermissions(
+        alert: true,
+        sound: true,
+      );
+      await _plugin.resolvePlatformSpecificImplementation<MacOSFlutterLocalNotificationsPlugin>()?.requestPermissions(
+        alert: true,
+        sound: true,
+      );
     } catch (_) {}
   }
 
@@ -119,13 +125,15 @@ class LiveNotifier {
     final s = S(store.settings.language);
     final now = DateTime.now();
     // Underway, or leaving within 2 hours.
-    final trip = (store.trips.where((t) => !t.finished && t.journey.departure.difference(now).inMinutes <= 120).toList()
-          ..sort((a, b) => a.journey.departure.compareTo(b.journey.departure)))
-        .firstOrNull;
+    final trip =
+        (store.trips.where((t) => !t.finished && t.journey.departure.difference(now).inMinutes <= 120).toList()
+              ..sort((a, b) => a.journey.departure.compareTo(b.journey.departure)))
+            .firstOrNull;
     final text = trip == null ? null : liveText(trip.journey, now, s, minTransfer: store.settings.minTransferMinutes);
     try {
       if (trip == null || text == null) {
-        if (_service) await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.stopForegroundService();
+        final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+        if (_service) await android?.stopForegroundService();
         if (_shownTrip != null) await _plugin.cancel(id: _liveId);
         _service = false;
         _shownTrip = null;

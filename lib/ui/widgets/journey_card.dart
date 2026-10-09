@@ -189,7 +189,10 @@ class Tag extends StatelessWidget {
         : (dark ? Color.lerp(accent, Colors.white, 0.35)! : Color.lerp(accent, Colors.black, 0.15)!);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: (accent ?? c).withValues(alpha: dark ? 0.22 : 0.12), borderRadius: BorderRadius.circular(20)),
+      decoration: BoxDecoration(
+        color: (accent ?? c).withValues(alpha: dark ? 0.22 : 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -221,10 +224,7 @@ List<Widget> journeyTags(BuildContext context, Journey j, {String? highlight, in
     // Where it came from: background info, so plain small text instead of more pills.
     Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
-      child: Text(
-        j.sources.map(s.sourceLabel).join(' · '),
-        style: TextStyle(fontSize: 11.5, color: Theme.of(context).colorScheme.outline),
-      ),
+      child: Text(j.sources.map(s.sourceLabel).join(' · '), style: TextStyle(fontSize: 11.5, color: Theme.of(context).colorScheme.outline)),
     ),
   ];
 }

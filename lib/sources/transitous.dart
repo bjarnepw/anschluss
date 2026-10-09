@@ -35,6 +35,23 @@ const _noCoach =
     'HIGHSPEED_RAIL,LONG_DISTANCE,NIGHT_RAIL,REGIONAL_FAST_RAIL,REGIONAL_RAIL,RAIL,SUBURBAN,SUBWAY,METRO,'
     'TRAM,BUS,FERRY,CABLE_CAR,FUNICULAR,AERIAL_LIFT,ODM,OTHER';
 
+/// MOTIS transit modes for the train types the user kept (Verkehrsmittel).
+String _transitModes(SearchOptions o) {
+  final all = (o.regionalOnly ? _regional : (o.coach ? '$_noCoach,COACH' : _noCoach)).split(',');
+  return all
+      .where(
+        (m) => !o.excludedModes.contains(
+          _modes[m] ??
+              (m == 'FUNICULAR' || m == 'AERIAL_LIFT'
+                  ? Mode.tram
+                  : m == 'ODM'
+                  ? Mode.bus
+                  : Mode.other),
+        ),
+      )
+      .join(',');
+}
+
 class TransitousSource implements Source, LocationSource {
   @override
   String get id => 'transitous';
@@ -119,7 +136,12 @@ class TransitousSource implements Source, LocationSource {
       if (opts.bike) 'requireBikeTransport': 'true',
       // Ask for trains-only routing instead of filtering afterwards – otherwise night searches come back
       // as FlixBus-only and end up empty.
-      if (opts.regionalOnly) 'transitModes': _regional else if (!opts.coach) 'transitModes': _noCoach,
+      if (opts.excludedModes.isNotEmpty)
+        'transitModes': _transitModes(opts)
+      else if (opts.regionalOnly)
+        'transitModes': _regional
+      else if (!opts.coach)
+        'transitModes': _noCoach,
       // Walking: how far to walk to/from stations, and whether walking the whole way is an option.
       'maxPreTransitTime': '${opts.maxWalkMinutes * 60}',
       'maxPostTransitTime': '${opts.maxWalkMinutes * 60}',

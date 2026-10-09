@@ -7,6 +7,15 @@ enum SortMode { best, fast, cheap, early, transfers }
 
 const allSources = ['db', 'transitous', 'flix', 'oebb', 'regiojet'];
 
+/// Train types you can switch off for searches (Verkehrsmittel), by group; values are Mode names.
+const modeGroups = {
+  'long': ['long', 'night'], // ICE, IC/EC, night trains
+  'regional': ['regional'], // RE, RB
+  'suburban': ['suburban'], // S-Bahn
+  'metro': ['metro', 'tram'], // U-Bahn, tram
+  'bus': ['bus', 'ferry'],
+};
+
 class Settings {
   /// Minimum transfer time (Umstiegszeit) in minutes. 0 = let each operator decide.
   final int minTransferMinutes;
@@ -25,6 +34,9 @@ class Settings {
   final bool bike;
   final bool coach;
   final int? age;
+
+  /// Modes (Mode names) not to use – see [modeGroups].
+  final List<String> excludedModes;
 
   final List<String> sources;
   final SortMode defaultSort;
@@ -88,6 +100,7 @@ class Settings {
     this.bike = false,
     this.coach = false,
     this.age,
+    this.excludedModes = const [],
     this.sources = allSources,
     this.defaultSort = SortMode.best,
     this.themeMode = 0,
@@ -119,6 +132,7 @@ class Settings {
     bool? bike,
     bool? coach,
     int? Function()? age,
+    List<String>? excludedModes,
     List<String>? sources,
     SortMode? defaultSort,
     int? themeMode,
@@ -148,6 +162,7 @@ class Settings {
     bike: bike ?? this.bike,
     coach: coach ?? this.coach,
     age: age != null ? age() : this.age,
+    excludedModes: excludedModes ?? this.excludedModes,
     sources: sources ?? this.sources,
     defaultSort: defaultSort ?? this.defaultSort,
     themeMode: themeMode ?? this.themeMode,
@@ -179,6 +194,7 @@ class Settings {
     'bike': bike,
     'coach': coach,
     'age': age,
+    'excludedModes': excludedModes,
     'sources': sources,
     'defaultSort': defaultSort.name,
     'themeMode': themeMode,
@@ -213,6 +229,7 @@ class Settings {
       bike: pick('bike', d.bike),
       coach: pick('coach', d.coach),
       age: j['age'] is int ? j['age'] as int : null,
+      excludedModes: j['excludedModes'] is List ? (j['excludedModes'] as List).whereType<String>().toList() : d.excludedModes,
       sources: j['sources'] is List ? (j['sources'] as List).whereType<String>().where(allSources.contains).toList() : d.sources,
       defaultSort: SortMode.values.firstWhere((s) => s.name == j['defaultSort'], orElse: () => d.defaultSort),
       themeMode: pick('themeMode', d.themeMode).clamp(0, 2),
