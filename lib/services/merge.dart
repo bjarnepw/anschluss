@@ -12,6 +12,7 @@ const _priority = {
   'flix': 3,
   'regiojet': 3,
   'flixcombo': 4,
+  'trick': 5,
 }; // whose leg details win (realtime, platforms)
 
 String _minute(DateTime d) => d.toUtc().toIso8601String().substring(0, 16);
@@ -81,6 +82,7 @@ Journey _absorb(Journey primary, Journey other) {
     dticket: primary.dticket,
     soldOut: soldOut,
     bookingUrls: primary.bookingUrls,
+    trick: primary.trick,
   );
 }
 
@@ -88,7 +90,7 @@ List<Journey> mergeJourneys(Iterable<List<Journey>> lists) {
   final all = lists.expand((l) => l).toList()..sort((a, b) => (_priority[a.source] ?? 9).compareTo(_priority[b.source] ?? 9));
   final merged = <Journey>[];
   for (final j in all) {
-    final i = merged.indexWhere((m) => sameJourney(m, j));
+    final i = (j.trick?.separate ?? false) ? -1 : merged.indexWhere((m) => sameJourney(m, j) && !(m.trick?.separate ?? false));
     if (i >= 0) {
       merged[i] = _absorb(merged[i], j);
     } else {
@@ -102,6 +104,7 @@ List<Journey> mergeJourneys(Iterable<List<Journey>> lists) {
           dticket: j.dticket,
           soldOut: j.soldOut,
           bookingUrls: {...j.bookingUrls},
+          trick: j.trick,
         ),
       );
     }
@@ -189,7 +192,7 @@ List<Journey> pruneImplausible(List<Journey> js, Place from, Place to) {
     // Hard limits, even for cheap options: nobody wants Berlin → Heidelberg via Switzerland.
     if (direct.isFinite && direct > 5 && travelled(j) > direct * 3 + 20) return false;
     if (j.duration > fastest * 1.6 + 60 && j.duration > fastest + 120) return false;
-    if (muchCheaper(j)) return true;
+    if (muchCheaper(j) || j.trick != null) return true; // tricks were already checked to be worth it
     if (direct.isFinite && direct > 5 && travelled(j) > direct * 2.3 + 10) return false; // big detour
     if (j.duration > fastest * 2 + 20) return false; // far slower, not cheaper
     return true;

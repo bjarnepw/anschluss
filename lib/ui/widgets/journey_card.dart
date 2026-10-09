@@ -181,10 +181,15 @@ class Tag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final c = color ?? cs.onSurfaceVariant;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final accent = color;
+    // Same contrast fix as Capsule: the plain accent is too faint as text on a dark card.
+    final c = accent == null
+        ? cs.onSurfaceVariant
+        : (dark ? Color.lerp(accent, Colors.white, 0.35)! : Color.lerp(accent, Colors.black, 0.15)!);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)),
+      decoration: BoxDecoration(color: (accent ?? c).withValues(alpha: dark ? 0.22 : 0.12), borderRadius: BorderRadius.circular(20)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -211,8 +216,16 @@ List<Widget> journeyTags(BuildContext context, Journey j, {String? highlight, in
     else if (buffer != null && minTransfer > 0 && buffer < minTransfer)
       Tag(s.tightTransfer(buffer), color: Colors.orange.shade800, icon: Icons.directions_run),
     if (j.dticket) Tag('D-Ticket', color: Colors.teal.shade600),
+    if (j.trick != null) Tag(s.trick(j.trick!, fmtEur), color: Colors.deepPurple.shade400, icon: Icons.auto_awesome),
     if (showDominated && j.dominated) Tag(s.beaten),
-    ...j.sources.map((x) => Tag(s.sourceLabel(x))),
+    // Where it came from: background info, so plain small text instead of more pills.
+    Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+      child: Text(
+        j.sources.map(s.sourceLabel).join(' · '),
+        style: TextStyle(fontSize: 11.5, color: Theme.of(context).colorScheme.outline),
+      ),
+    ),
   ];
 }
 
@@ -245,13 +258,20 @@ class PriceView extends StatelessWidget {
     }
     final p = journey.bestPrice;
     if (p == null) return Text(s.noPrice, style: t.labelMedium?.copyWith(color: Theme.of(context).colorScheme.outline));
+    // What the price is for: only some trains (partial), or the trains the D-Ticket doesn't cover.
+    String trains(Iterable<Leg> ls) => ls.length > 2 ? '${ls.take(2).map((l) => l.line).join(', ')} …' : ls.map((l) => l.line).join(', ');
+    final paid = journey.transit.where((l) => !dticketModes.contains(l.mode)).toList();
+    final note = p.partial
+        ? (p.covers != null ? s.onlyFor(p.covers!) : s.partPrice)
+        : (dticket && paid.isNotEmpty && paid.length < journey.transit.length ? s.paidRestDticket(trains(paid)) : null);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Text(
-          '${p.partial ? (s.de ? 'ab ' : 'from ') : ''}${p.converted ? '≈ ' : ''}${fmtEur(p.amount)}',
+          '${p.partial ? '≥ ' : ''}${p.converted ? '≈ ' : ''}${fmtEur(p.amount)}',
           style: t.titleMedium?.copyWith(fontWeight: FontWeight.w800),
         ),
+        if (note != null) Text(note, style: t.labelSmall?.copyWith(fontWeight: FontWeight.w600)),
         Text(
           '${p.converted ? '${p.originalAmount!.round()} ${currencySymbol(p.originalCurrency!)} · ' : ''}${s.sourceLabel(p.source)}${journey.prices.length > 1 ? ' · ${s.offers(journey.prices.length)}' : ''}${p.seats != null && p.seats! < 10 ? ' · ${p.seats} ${s.de ? 'Plätze' : 'seats'}' : ''}',
           style: t.labelSmall,
@@ -294,6 +314,12 @@ class JourneyCard extends StatelessWidget {
     final depDelay = j.legs.first.depDelay ?? firstTransit.depDelay;
     final arrDelay = j.legs.last.arrDelay;
     final dim = j.dominated && !selected;
+    // Equal-width digits so times line up from card to card.
+    final timeStyle = t.titleLarge?.copyWith(
+      fontWeight: FontWeight.w800,
+      fontFeatures: const [FontFeature.tabularFigures()],
+      decoration: j.cancelled ? TextDecoration.lineThrough : null,
+    );
 
     return Opacity(
       opacity: j.cancelled ? 0.55 : (dim ? 0.8 : 1),
@@ -317,16 +343,10 @@ class JourneyCard extends StatelessWidget {
                           Wrap(
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
-                              Text(
-                                fmtTime(j.departure),
-                                style: t.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  decoration: j.cancelled ? TextDecoration.lineThrough : null,
-                                ),
-                              ),
+                              Text(fmtTime(j.departure), style: timeStyle),
                               DelayText(depDelay),
                               Text('  –  ', style: t.titleLarge),
-                              Text(fmtTime(j.arrival), style: t.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                              Text(fmtTime(j.arrival), style: timeStyle),
                               DelayText(arrDelay),
                               if (dd > 0) Text(' +$dd', style: t.labelSmall?.copyWith(color: cs.error)),
                             ],

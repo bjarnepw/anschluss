@@ -157,18 +157,25 @@ class Net {
 }
 
 /// Small in-memory TTL cache so repeated searches don't hammer rate-limited APIs.
+/// Holds the request itself, so the same call made twice at once goes out only once; failures aren't kept.
 class TtlCache {
-  final _map = <String, (DateTime, Object?)>{};
+  final _map = <String, (DateTime, Future<Object?>)>{};
   final int maxEntries;
   TtlCache({this.maxEntries = 300});
 
   Future<T> get<T>(String key, Duration ttl, Future<T> Function() fn) async {
     final hit = _map[key];
-    if (hit != null && hit.$1.isAfter(DateTime.now())) return hit.$2 as T;
-    final v = await fn();
-    _map[key] = (DateTime.now().add(ttl), v);
+    if (hit != null && hit.$1.isAfter(DateTime.now())) return await hit.$2 as T;
+    final f = fn();
+    final entry = (DateTime.now().add(ttl), f);
+    _map[key] = entry;
     if (_map.length > maxEntries) _map.remove(_map.keys.first);
-    return v;
+    try {
+      return await f;
+    } catch (_) {
+      if (identical(_map[key], entry)) _map.remove(key);
+      rethrow;
+    }
   }
 }
 

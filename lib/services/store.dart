@@ -56,6 +56,10 @@ class SavedTrip {
   /// What changed on refreshes (delays, platforms, cancellations), newest first.
   final List<String> changes;
 
+  /// After switching to an alternative on the way: index of the first leg of the new part. Refreshes look up
+  /// only that part (from where it starts); the legs before it are already behind you.
+  final int? switchedAt;
+
   const SavedTrip({
     required this.id,
     required this.journey,
@@ -63,18 +67,20 @@ class SavedTrip {
     required this.savedAt,
     this.updatedAt,
     this.changes = const [],
+    this.switchedAt,
   });
 
   bool get finished => journey.arrival.isBefore(DateTime.now());
   bool get ongoing => !journey.departure.isAfter(DateTime.now()) && !finished;
 
-  SavedTrip copyWith({Journey? journey, DateTime? updatedAt, List<String>? changes}) => SavedTrip(
+  SavedTrip copyWith({Journey? journey, DateTime? updatedAt, List<String>? changes, int? switchedAt}) => SavedTrip(
     id: id,
     journey: journey ?? this.journey,
     route: route,
     savedAt: savedAt,
     updatedAt: updatedAt ?? this.updatedAt,
     changes: changes ?? this.changes,
+    switchedAt: switchedAt ?? this.switchedAt,
   );
 
   Map<String, dynamic> toJson() => {
@@ -84,6 +90,7 @@ class SavedTrip {
     'savedAt': savedAt.toIso8601String(),
     'updatedAt': updatedAt?.toIso8601String(),
     'changes': changes,
+    if (switchedAt != null) 'switchedAt': switchedAt,
   };
 
   factory SavedTrip.fromJson(Map<String, dynamic> j) => SavedTrip(
@@ -93,6 +100,7 @@ class SavedTrip {
     savedAt: DateTime.tryParse(j['savedAt'] as String? ?? '') ?? DateTime.now(),
     updatedAt: DateTime.tryParse(j['updatedAt'] as String? ?? ''),
     changes: ((j['changes'] as List?) ?? const []).whereType<String>().toList(),
+    switchedAt: j['switchedAt'] as int?,
   );
 }
 

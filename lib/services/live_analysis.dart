@@ -38,6 +38,9 @@ class LiveAnalysis {
 
   final List<TransferRisk> risks;
 
+  /// A train still ahead of you (or the one you're on) is cancelled.
+  final Leg? cancelled;
+
   const LiveAnalysis({
     this.leg,
     this.expected,
@@ -47,12 +50,14 @@ class LiveAnalysis {
     this.offRoute = false,
     this.reachStation,
     this.risks = const [],
+    this.cancelled,
   });
 
   /// The delay that counts: official, unless your position says it's worse.
   int get effectiveDelay => max(officialDelay, gpsDelay ?? officialDelay);
 
-  bool get atRisk => risks.any((r) => r.buffer < 0) || (reachStation != null && reachStation!.$1 > reachStation!.$2);
+  bool get atRisk =>
+      cancelled != null || risks.any((r) => r.buffer < 0) || (reachStation != null && reachStation!.$1 > reachStation!.$2);
 }
 
 /// Timeline of a leg: each stop with its time and its distance along the leg's path.
@@ -184,6 +189,7 @@ LiveAnalysis analyseTrip(Journey j, DateTime now, {double? lat, double? lon, int
     offRoute: offRoute,
     reachStation: reach,
     risks: risks,
+    cancelled: transit.where((l) => l.cancelled && l.arr.isAfter(now)).firstOrNull,
   );
 }
 
@@ -195,6 +201,70 @@ Place alternativesStart(Journey j, DateTime now, {double? lat, double? lon, Stri
     if (next != null && next.lat != null) return Place(name: next.name, lat: next.lat, lon: next.lon);
     return leg.to;
   }
+  // Changing trains: from the station the last train arrived at, not from the start of the trip.
+  final done = j.transit.where((l) => !now.isBefore(l.arr)).lastOrNull;
+  if (done != null) return done.to;
   if (lat != null && lon != null) return Place(name: here, lat: lat, lon: lon, kind: PlaceKind.place);
   return j.transit.first.from;
+}
+
+/// The trip as ridden so far, then [alt] from where it starts: finished legs are kept, the train you are on
+/// is cut at the stop [alt] starts from. Returns the new journey and the index of [alt]'s first leg in it.
+(Journey, int) switchTo(Journey j, Journey alt, DateTime now) {
+  final start = alt.legs.first.from.name;
+  final kept = <Leg>[];
+  for (final l in j.legs) {
+    if (!l.arr.isAfter(now)) {
+      kept.add(l);
+      continue;
+    }
+    if (!l.isWalk && !now.isBefore(l.dep)) {
+      final i = l.stops.indexWhere((st) => st.name == start);
+      if (i >= 0) {
+        kept.add(_cutAt(l, i));
+      } else if (l.to.name == start) {
+        kept.add(l);
+      }
+    }
+    break;
+  }
+  return (
+    Journey(
+      source: alt.source,
+      sources: {...j.sources, ...alt.sources}.toList(),
+      legs: [...kept, ...alt.legs],
+      prices: j.prices,
+      dticket: alt.dticket,
+      soldOut: alt.soldOut,
+      bookingUrls: alt.bookingUrls,
+    ),
+    kept.length,
+  );
+}
+
+/// [l] up to its stop [i] (you get off there).
+Leg _cutAt(Leg l, int i) {
+  final st = l.stops[i];
+  final arr = (st.arr ?? st.dep)!;
+  final path = st.lat == null || l.path.length < 2 ? l.path : l.path.sublist(0, _nearestIndex(l.path, st.lat!, st.lon!) + 1);
+  return Leg(
+    mode: l.mode,
+    line: l.line,
+    operator: l.operator,
+    direction: l.direction,
+    from: l.from,
+    to: Place(name: st.name, lat: st.lat, lon: st.lon),
+    dep: l.dep,
+    arr: arr,
+    plannedDep: l.plannedDep,
+    plannedArr: arr.subtract(Duration(minutes: l.arrDelay ?? 0)),
+    depDelay: l.depDelay,
+    arrDelay: l.arrDelay,
+    depPlatform: l.depPlatform,
+    cancelled: l.cancelled,
+    stops: l.stops.sublist(0, i),
+    path: path,
+    pathExact: l.pathExact,
+    remarks: l.remarks,
+  );
 }

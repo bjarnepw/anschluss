@@ -2,6 +2,7 @@
 // Port of the request/response handling in db-vendo-client's `dbnav` profile.
 // Covers DB Fernverkehr, nearly all German regional operators, local transport, plus timetables of
 // FlixTrain / Nightjet / European Sleeper. Unofficial; rate-limited (~60 req/min) and may block networks.
+import 'dart:convert';
 import 'dart:math';
 
 import '../core/net.dart';
@@ -156,12 +157,17 @@ class DbSource implements Source, LocationSource {
         },
       },
     };
-    final res = await Net.instance.postJson(
-      Uri.parse('$_base/angebote/fahrplan'),
-      body,
-      headers: _headers('application/x.db.vendo.mob.verbindungssuche.v9+json'),
-      timeout: const Duration(seconds: 20),
-      needsProxy: true,
+    // Short: repeat searches and the trick search ask the same thing within seconds; live tracking needs fresh data.
+    final res = await cache.get(
+      'db:fahrplan:${jsonEncode(body)}',
+      const Duration(seconds: 30),
+      () => Net.instance.postJson(
+        Uri.parse('$_base/angebote/fahrplan'),
+        body,
+        headers: _headers('application/x.db.vendo.mob.verbindungssuche.v9+json'),
+        timeout: const Duration(seconds: 20),
+        needsProxy: true,
+      ),
     );
     if (res is Map && res['fehlerNachricht'] != null) {
       final f = res['fehlerNachricht'] as Map;

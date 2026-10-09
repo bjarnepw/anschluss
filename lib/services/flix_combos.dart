@@ -97,7 +97,9 @@ class FlixCombos {
             source: 'flixcombo',
             sources: ['flix'],
             legs: j.legs,
-            prices: [Price(amount: price.amount, source: 'flix', partial: !whole, url: price.url, seats: price.seats)],
+            prices: [
+              Price(amount: price.amount, source: 'flix', partial: !whole, url: price.url, seats: price.seats, covers: whole ? null : leg.line),
+            ],
             dticket: false,
             soldOut: ride!.soldOut,
             bookingUrls: {...ride.bookingUrls},
@@ -218,7 +220,17 @@ class FlixCombos {
       source: 'flixcombo',
       sources: ['flix', if (feeders.isNotEmpty) 'transitous'],
       legs: legs,
-      prices: [if (price != null) Price(amount: price.amount, source: 'flix', partial: !whole, url: price.url, seats: price.seats)],
+      prices: [
+        if (price != null)
+          Price(
+            amount: price.amount,
+            source: 'flix',
+            partial: !whole,
+            url: price.url,
+            seats: price.seats,
+            covers: whole ? null : ride.transit.map((l) => l.line).join(', '),
+          ),
+      ],
       dticket: false,
       soldOut: ride.soldOut,
       bookingUrls: {...ride.bookingUrls},

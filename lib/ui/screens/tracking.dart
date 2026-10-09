@@ -57,7 +57,10 @@ class _TripScreenState extends State<TripScreen> {
   /// A refresh finished (ours or the background one): show its result.
   void _onUpdater() {
     final r = TripUpdater.instance?.lastResult(widget.tripId);
-    if (r != null && mounted) setState(() => _last = r.$2);
+    if (r != null && mounted) {
+      setState(() => _last = r.$2);
+      _onPosition();
+    }
   }
 
   void _onPosition() {
@@ -73,8 +76,9 @@ class _TripScreenState extends State<TripScreen> {
       lon: p?.longitude,
       minTransfer: context.store.settings.minTransferMinutes,
     );
-    // Something breaks: look for alternatives on our own (at most every 5 minutes).
-    if (live.atRisk && (_altsAt == null || DateTime.now().difference(_altsAt!).inMinutes >= 5)) _findAlternatives(live);
+    // Something breaks (or the connection is gone): look for alternatives on our own (at most every 5 minutes).
+    final broken = live.atRisk || _last?.outcome == RefreshOutcome.notFound;
+    if (broken && (_altsAt == null || DateTime.now().difference(_altsAt!).inMinutes >= 5)) _findAlternatives(live);
   }
 
   /// Long-range search from where you'll be (next stop / your position) to the destination – also later
@@ -112,7 +116,8 @@ class _TripScreenState extends State<TripScreen> {
       results: 10, // long-term: more and later options
       maxWalkMinutes: opts.maxWalkMinutes,
       includeWalking: opts.includeWalking,
-      moreAlternatives: true,
+      // On the way the fastest way on counts, not split tickets and other cheap tricks.
+      moreAlternatives: false,
     );
     SearchResult? last;
     try {
@@ -152,7 +157,38 @@ class _TripScreenState extends State<TripScreen> {
         _refreshing = false;
         _last = r;
       });
+      _onPosition();
     }
+  }
+
+  /// Switches the trip to [alt]: the ride so far stays, tracking continues on the new route. Undo via snackbar.
+  void _take(Journey alt) {
+    final store = context.store;
+    final s = context.s;
+    final old = store.tripById(widget.tripId);
+    if (old == null) return;
+    final (journey, cut) = switchTo(old.journey, alt, DateTime.now());
+    journey.id = old.id;
+    final first = alt.transit.firstOrNull ?? alt.legs.first;
+    store.updateTrip(
+      old.copyWith(
+        journey: journey,
+        switchedAt: cut,
+        updatedAt: DateTime.now(),
+        changes: ['${fmtTime(DateTime.now())} ${s.switchedLog(first.line, fmtTime(first.dep))}', ...old.changes].take(30).toList(),
+      ),
+    );
+    setState(() {
+      _alts = [];
+      _altsAt = null;
+      _last = null;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(s.switched),
+        action: SnackBarAction(label: s.undo, onPressed: () => store.updateTrip(old)),
+      ),
+    );
   }
 
   Future<void> _downloadMap(Journey j) async {
@@ -190,7 +226,11 @@ class _TripScreenState extends State<TripScreen> {
     final lost = _last?.outcome == RefreshOutcome.notFound;
     final canPrefetch = !kIsWeb && prefetchAllowed(store.settings.tileUrl);
     final pos = _loc.position.value;
-    final live = analyseTrip(j, DateTime.now(), lat: pos?.latitude, lon: pos?.longitude, minTransfer: minTransfer);
+    final now = DateTime.now();
+    final live = analyseTrip(j, now, lat: pos?.latitude, lon: pos?.longitude, minTransfer: minTransfer);
+    // Where the current plan gets you, incl. what your position adds to the official delay.
+    final planArrival = j.arrival.add(Duration(minutes: live.effectiveDelay - live.officialDelay));
+    final alts = _alts.where((a) => a.departure.isAfter(now.subtract(const Duration(minutes: 1)))).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -271,6 +311,51 @@ class _TripScreenState extends State<TripScreen> {
                     '${x.buffer < 0 ? s.missedTransfer : s.tightTransfer(x.buffer)} – ${x.departing.from.name}: '
                     '${x.arriving.line} ${fmtTime(x.arriving.arr)} → ${x.departing.line} ${fmtTime(x.departing.dep)}',
               ),
+            // Right under the problem, not below the map: plan B, compared with where your plan gets you.
+            if (alts.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('${s.alternatives}${_altsFrom != null ? ' ${s.de ? 'ab' : 'from'} ${_altsFrom!.name}' : ''}', style: t.titleMedium),
+              const SizedBox(height: 8),
+              for (final a in alts)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      JourneyCard(
+                        journey: a,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                JourneyDetailScreen(journey: a, route: SavedRoute(_altsFrom ?? a.legs.first.from, trip.route.to)),
+                          ),
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Builder(
+                              builder: (_) {
+                                final d = a.arrival.difference(planArrival).inMinutes;
+                                return Text(
+                                  s.vsPlan(d),
+                                  style: t.labelLarge?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: d < -1 ? Colors.green.shade700 : (d > 1 ? Colors.orange.shade800 : cs.onSurfaceVariant),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          TextButton.icon(onPressed: () => _take(a), icon: const Icon(Icons.check), label: Text(s.takeThis)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+            ],
             if (trip.changes.isNotEmpty)
               Card(
                 child: ExpansionTile(
@@ -318,42 +403,6 @@ class _TripScreenState extends State<TripScreen> {
             LegList(journey: j),
             const SizedBox(height: 12),
             Wrap(spacing: 8, runSpacing: 8, children: bookingButtons(context, j)),
-            if (_alts.isNotEmpty) ...[
-              const SizedBox(height: 24),
-              Text('${s.alternatives}${_altsFrom != null ? ' ${s.de ? 'ab' : 'from'} ${_altsFrom!.name}' : ''}', style: t.titleMedium),
-              const SizedBox(height: 8),
-              for (final a in _alts)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: JourneyCard(
-                    journey: a,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => JourneyDetailScreen(journey: a, route: SavedRoute(_altsFrom ?? a.legs.first.from, trip.route.to)),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-            if (lost && _last!.alternatives.isNotEmpty) ...[
-              const SizedBox(height: 24),
-              Text(s.alternatives, style: t.titleMedium),
-              const SizedBox(height: 8),
-              for (final a in _last!.alternatives)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: JourneyCard(
-                    journey: a,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => JourneyDetailScreen(journey: a, route: trip.route),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
           ],
         ),
       ),
@@ -425,6 +474,7 @@ class _LiveCard extends StatelessWidget {
         ),
     ];
     final warnings = <String>[
+      if (live.cancelled != null) s.cancelledAhead(live.cancelled!.line),
       if (live.offRoute)
         s.de
             ? 'Du bist nicht auf der Strecke – nicht im Zug oder GPS ungenau.'

@@ -1,5 +1,7 @@
 // ÖBB HAFAS (mgate.exe). Independent second opinion for cross-border trips, Nightjet, Westbahn,
 // and trains into Austria/Switzerland/Italy. No prices.
+import 'dart:convert';
+
 import '../core/net.dart';
 import '../core/util.dart';
 import '../models/journey.dart';
@@ -34,8 +36,13 @@ class OebbSource implements Source {
   @override
   bool get corsFriendly => false;
 
-  Future<Map<String, dynamic>> _call(Map<String, dynamic> svcReq, {Duration timeout = const Duration(seconds: 15)}) async {
-    final body = await Net.instance.postJson(_endpoint, _envelope(svcReq), timeout: timeout, needsProxy: true);
+  Future<Map<String, dynamic>> _call(
+    Map<String, dynamic> svcReq, {
+    Duration timeout = const Duration(seconds: 15),
+    Duration? cacheFor,
+  }) async {
+    Future<Object?> post() => Net.instance.postJson(_endpoint, _envelope(svcReq), timeout: timeout, needsProxy: true);
+    final body = cacheFor == null ? await post() : await cache.get('oebb:${jsonEncode(svcReq)}', cacheFor, post);
     if (body is! Map<String, dynamic>) throw SourceException('unreadable answer from ÖBB');
     if (body['err'] != null && body['err'] != 'OK') throw SourceException('ÖBB: ${body['errTxt'] ?? body['err']}');
     final svc = (body['svcResL'] as List?)?.firstOrNull as Map<String, dynamic>?;
@@ -126,7 +133,7 @@ class OebbSource implements Source {
         'numF': opts.results,
         'outFrwd': !opts.arriveBy,
       },
-    });
+    }, cacheFor: const Duration(seconds: 30));
     return parseOebbTrips(res, opts);
   }
 }

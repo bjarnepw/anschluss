@@ -42,6 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
   SearchResult? _result;
   bool _searching = false;
   bool _loadingMore = false;
+  bool _moreEarlier = false; // which of earlier/later is loading
   bool _fromCache = false;
   StreamSubscription<SearchResult>? _sub;
   String? _selectedId;
@@ -278,6 +279,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Loads the connections right after the last one and adds them to the list.
   void _later() {
+    _moreEarlier = false;
     final js = (_result?.journeys ?? const <Journey>[]).where((j) => !j.walkOnly);
     if (js.isEmpty) {
       _search(at: (_searchedWhen ?? DateTime.now()).add(const Duration(minutes: 30)), keep: true);
@@ -289,6 +291,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Loads the connections right before the first one and adds them to the list.
   void _earlier() {
+    _moreEarlier = true;
     final js = (_result?.journeys ?? const <Journey>[]).where((j) => !j.walkOnly);
     if (js.isEmpty) {
       _search(at: (_searchedWhen ?? DateTime.now()).subtract(const Duration(minutes: 30)), keep: true);
@@ -581,7 +584,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: TextButton.icon(
               onPressed: _searching ? null : _earlier,
-              icon: _loadingMore
+              icon: _loadingMore && _moreEarlier
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.expand_less),
               label: Text(s.earlier),
@@ -621,8 +624,17 @@ class _HomeScreenState extends State<HomeScreen> {
       if (_searching && js.isEmpty)
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(children: [const CircularProgressIndicator(), const SizedBox(height: 12), Text(s.searching)]),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const LinearProgressIndicator(),
+                const SizedBox(height: 8),
+                Text(s.searching, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(height: 8),
+                for (var i = 0; i < 3; i++) const _CardPlaceholder(),
+              ],
+            ),
           ),
         ),
       if (!_searching && _result != null && js.isEmpty)
@@ -652,7 +664,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             child: TextButton.icon(
               onPressed: _searching ? null : _later,
-              icon: _loadingMore
+              icon: _loadingMore && !_moreEarlier
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.expand_more),
               label: Text(s.later),
@@ -903,13 +915,33 @@ class _HomeScreenState extends State<HomeScreen> {
     final s = context.s;
     final st = _result!.status;
     if (st.isEmpty) return const SizedBox.shrink();
+    // Once done, one summary line; only sources with a problem keep their own chip.
+    final done = _result!.done;
+    final shown = done ? st.entries.where((e) => e.value.state != SourceState.ok) : st.entries;
+    final ok = st.values.where((x) => x.state == SourceState.ok).length;
     return SizedBox(
       height: 40,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         children: [
-          for (final e in st.entries)
+          if (done && ok > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Tooltip(
+                message: [
+                  for (final e in st.entries)
+                    if (e.value.state == SourceState.ok) '${s.sourceLabel(e.key)}: ${s.found(e.value.count)} · ${e.value.ms} ms',
+                ].join('\n'),
+                triggerMode: TooltipTriggerMode.tap,
+                child: Chip(
+                  visualDensity: VisualDensity.compact,
+                  avatar: Icon(Icons.check_circle, size: 16, color: Colors.green.shade600),
+                  label: Text(s.sourcesSummary(ok, _result!.journeys.length), style: const TextStyle(fontSize: 12)),
+                ),
+              ),
+            ),
+          for (final e in shown)
             Padding(
               padding: const EdgeInsets.only(right: 6),
               child: Tooltip(
@@ -1159,6 +1191,37 @@ class _PlaceSheetState extends State<_PlaceSheet> {
                   ],
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Grey stand-in for a journey card while the first results are on their way.
+class _CardPlaceholder extends StatelessWidget {
+  const _CardPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).colorScheme.surfaceContainerHighest;
+    Widget bar(double w, double h) => Container(
+      width: w,
+      height: h,
+      decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(6)),
+    );
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [bar(140, 22), const Spacer(), bar(56, 22)]),
+            const SizedBox(height: 10),
+            Row(children: [bar(64, 20), const SizedBox(width: 6), bar(80, 20)]),
+            const SizedBox(height: 12),
+            bar(double.infinity, 22),
           ],
         ),
       ),

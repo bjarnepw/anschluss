@@ -16,6 +16,7 @@ import '../sources/transitous.dart';
 import '../offline/offline_pack.dart';
 import 'flix_combos.dart';
 import 'merge.dart';
+import 'tricks.dart';
 
 enum SourceState { loading, ok, failed, paused, skipped }
 
@@ -121,14 +122,43 @@ Stream<SearchResult> searchJourneys(
       return;
     }
     final useCombos = opts.moreAlternatives && wanted.contains('flix') && !opts.dticketOnly && breaker.pausedFor('flix') == null;
-    if (!useCombos) {
+    // ponytail: tricks only for "depart at" searches; arrive-by would need the hub searches run backwards.
+    final useTricks =
+        opts.moreAlternatives && !opts.arriveBy && !opts.dticketOnly && wanted.contains('db') && breaker.pausedFor('db') == null;
+    if (!useCombos && !useTricks) {
       ctrl.close();
+      return;
+    }
+    final seed = mergeJourneys(lists.values);
+    var running = (useCombos ? 1 : 0) + (useTricks ? 1 : 0);
+    void finished() {
+      pending--;
+      emit();
+      if (--running == 0) ctrl.close();
+    }
+
+    if (useTricks) {
+      status['trick'] = const SourceStatus(SourceState.loading);
+      pending++;
+      final sw = Stopwatch()..start();
+      findTricks(from, to, opts, seed)
+          .timeout(const Duration(seconds: 45))
+          .then((list) {
+            lists['trick'] = list;
+            status['trick'] = SourceStatus(SourceState.ok, count: list.length, ms: sw.elapsedMilliseconds);
+          })
+          .catchError((Object e) {
+            status['trick'] = SourceStatus(SourceState.failed, error: e is TimeoutException ? 'timeout' : e.toString());
+          })
+          .whenComplete(finished);
+    }
+    if (!useCombos) {
+      emit();
       return;
     }
     status['flixcombo'] = const SourceStatus(SourceState.loading);
     pending++;
     emit();
-    final seed = mergeJourneys(lists.values);
     final combos = FlixCombos(flixSource, transitousSource);
     final sw = Stopwatch()..start();
     Future.wait([combos.find(from, to, opts, seed), combos.enrich(seed, opts)])
@@ -141,11 +171,7 @@ Stream<SearchResult> searchJourneys(
         .catchError((Object e) {
           status['flixcombo'] = SourceStatus(SourceState.failed, error: e is TimeoutException ? 'timeout' : e.toString());
         })
-        .whenComplete(() {
-          pending--;
-          emit();
-          ctrl.close();
-        });
+        .whenComplete(finished);
   }
 
   for (final id in wanted) {
@@ -211,7 +237,7 @@ Future<(Place, int)> stationFor(Place p) async {
   return (s, minutes);
 }
 
-Leg _walkLeg(Place from, Place to, DateTime dep, int minutes) => Leg(
+Leg walkLeg(Place from, Place to, DateTime dep, int minutes) => Leg(
   mode: Mode.walk,
   line: 'Walk',
   from: from,
@@ -254,9 +280,9 @@ Future<List<Journey>> _viaStations(Source src, Place from, Place to, SearchOptio
         source: j.source,
         sources: j.sources,
         legs: [
-          if (walkIn > 0) _walkLeg(from, a, j.departure.subtract(Duration(minutes: walkIn)), walkIn),
+          if (walkIn > 0) walkLeg(from, a, j.departure.subtract(Duration(minutes: walkIn)), walkIn),
           ...j.legs,
-          if (walkOut > 0) _walkLeg(b, to, j.arrival, walkOut),
+          if (walkOut > 0) walkLeg(b, to, j.arrival, walkOut),
         ],
         prices: j.prices,
         dticket: j.dticket,

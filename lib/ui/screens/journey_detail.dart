@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/currency.dart';
 import '../../models/journey.dart';
+import '../../services/live_notification.dart';
 import '../../services/store.dart';
 import '../app_scope.dart';
 import '../strings.dart';
@@ -30,6 +31,7 @@ List<Widget> bookingButtons(BuildContext context, Journey j) {
   final s = context.s;
   final flix = j.prices.where((p) => p.source == 'flix').map((p) => p.url).whereType<String>().firstOrNull ?? j.bookingUrls['flix'];
   final db = j.bookingUrls['db'];
+  final db2 = j.bookingUrls['db2']; // split-ticket tricks: the second ticket
   final oebb = j.bookingUrls['oebb'];
   final rj = j.prices.where((p) => p.source == 'regiojet').map((p) => p.url).whereType<String>().firstOrNull ?? j.bookingUrls['regiojet'];
   Future<void> open(String url) => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
@@ -42,6 +44,7 @@ List<Widget> bookingButtons(BuildContext context, Journey j) {
         label: Text(s.openBahn),
         onPressed: () => open(db),
       ),
+    if (db2 != null) OutlinedButton.icon(icon: const Icon(Icons.open_in_new), label: Text(s.openBahn2), onPressed: () => open(db2)),
     if (rj != null)
       (flix == null && db == null ? FilledButton.icon : OutlinedButton.icon)(
         icon: const Icon(Icons.confirmation_number_outlined),
@@ -137,6 +140,7 @@ class JourneyDetailScreen extends StatelessWidget {
                     label: Text(saved ? (s.de ? 'Gespeichert – öffnen' : 'Saved – open') : (s.de ? 'Reise speichern' : 'Save trip')),
                     onPressed: () {
                       final t = store.saveTrip(j, route);
+                      LiveNotifier.instance.askPermission();
                       Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => TripScreen(tripId: t.id)));
                     },
                   ),

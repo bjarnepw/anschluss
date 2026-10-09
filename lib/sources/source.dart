@@ -50,6 +50,27 @@ class SearchOptions {
     this.regionalOnly = false,
   });
 
+  /// For follow-up searches: never offers walking the whole way.
+  SearchOptions copyWith({DateTime? when, int? results, bool? dticketOnly, bool? moreAlternatives, bool? regionalOnly}) => SearchOptions(
+    when: when ?? this.when,
+    arriveBy: arriveBy,
+    minTransferMinutes: minTransferMinutes,
+    maxTransfers: maxTransfers,
+    bahncard: bahncard,
+    firstClass: firstClass,
+    dticket: dticket,
+    dticketOnly: dticketOnly ?? this.dticketOnly,
+    bike: bike,
+    coach: coach,
+    age: age,
+    results: results ?? this.results,
+    maxWalkMinutes: maxWalkMinutes,
+    includeWalking: false,
+    walkOnlyMaxMinutes: walkOnlyMaxMinutes,
+    moreAlternatives: moreAlternatives ?? this.moreAlternatives,
+    regionalOnly: regionalOnly ?? this.regionalOnly,
+  );
+
   factory SearchOptions.from(Settings s, DateTime when, {bool arriveBy = false}) => SearchOptions(
     when: when,
     arriveBy: arriveBy,

@@ -18,7 +18,9 @@ The same train found by several sources becomes one entry: every price, DB's rea
 - **Train colours**: every train family has a base colour (ICE red, IC orange, RE blue, RB teal, S-Bahn green, FlixTrain lime, Nightjet indigo, …) and every line gets its own shade of it, so two REs in one trip are easy to tell apart. Legend in Settings.
 - **Minimum transfer time (Umstiegszeit)**: 0–30 min, sent to DB, ÖBB and Transitous; shorter transfers are flagged or hidden. Also max. transfers.
 - **Transfer check**: every change shows how many minutes you have (after walking) and warns when it is tight or already missed because of delays.
-- **Live tracking**: pin a connection, it refreshes on its own, warns about tight transfers and offers alternatives if it disappears.
+- **Live tracking**: pin a connection, it refreshes on its own and warns about delays, cancellations and transfers that break. Alternatives are searched from where you are (next stop, or the station you're changing at), compared with your plan, and one tap switches the trip to them.
+- **Live notification** (Android): next train, platform, arrival and change with a countdown, kept up to date with the screen off; changes found in the background come as a notification.
+- **Tricks**: split tickets (also staying on the same train), D-Ticket to a later ICE stop, a better start/end station for addresses – shown only when clearly cheaper.
 - **Favourites and recents**: one-tap routes, recent stations, "my location" for the nearest station.
 - **Tickets**: BahnCard 25/50/100, 1st class, age, Deutschlandticket (0 € or D-Ticket-only), bike, long-distance buses.
 - **Reliability**: results stream in per source, retries with backoff, per-source circuit breaker (e.g. when DB blocks a network), in-memory caching, offline copy of the last search, sanity check against wrong-day results.

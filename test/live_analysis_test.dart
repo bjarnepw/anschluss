@@ -1,5 +1,8 @@
 import 'package:anschluss/models/journey.dart';
+import 'package:anschluss/models/settings.dart';
 import 'package:anschluss/services/live_analysis.dart';
+import 'package:anschluss/services/live_notification.dart';
+import 'package:anschluss/ui/strings.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -65,5 +68,45 @@ void main() {
   test('alternatives start at the next stop while riding', () {
     expect(alternativesStart(j, at(5)).name, 'B');
     expect(alternativesStart(j, at(12)).name, 'C');
+  });
+
+  test('between trains: alternatives start at the station you are changing at', () {
+    expect(alternativesStart(j, at(22), lat: 50.0, lon: 10.0).name, 'C');
+  });
+
+  test('a cancelled train ahead counts as a problem', () {
+    final cancelled = Leg(mode: Mode.regional, line: 'RE 2', from: re2.from, to: re2.to, dep: at(25), arr: at(40), cancelled: true);
+    final a = analyseTrip(Journey(source: 'db', dticket: true, legs: [re1, cancelled]), at(5));
+    expect(a.cancelled?.line, 'RE 2');
+    expect(a.atRisk, isTrue);
+  });
+
+  test('switching to an alternative: keep the ride so far, get off at the next stop', () {
+    final bus = Leg(
+      mode: Mode.bus,
+      line: 'Bus 9',
+      from: const Place(name: 'B', lat: 52.1, lon: 13.0),
+      to: re2.to,
+      dep: at(12),
+      arr: at(30),
+    );
+    final (nj, cut) = switchTo(j, Journey(source: 'db', dticket: true, legs: [bus]), at(5));
+    expect(nj.legs.map((l) => '${l.line} ${l.from.name}-${l.to.name}'), ['RE 1 A-B', 'Bus 9 B-D']);
+    expect(cut, 1);
+    expect(nj.legs.first.arr, at(10));
+    expect(nj.legs.first.stops, isEmpty);
+    expect(nj.legs.first.path.last, [52.1, 13.0]);
+  });
+
+  test('live notification: next train before, change info while riding, nothing after', () {
+    const s = S(AppLanguage.en);
+    final before = liveText(j, at(-10), s)!;
+    expect(before.$1, startsWith('RE 1 at '));
+    expect(before.$3, at(0)); // counts down to departure
+    final riding = liveText(j, at(5), s)!;
+    expect(riding.$1, 'RE 1 → C');
+    expect(riding.$2, contains('Change 5 min → RE 2'));
+    expect(riding.$3, at(20)); // counts down to arrival
+    expect(liveText(j, at(45), s), isNull);
   });
 }

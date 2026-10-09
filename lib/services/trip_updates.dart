@@ -8,6 +8,7 @@ import '../models/journey.dart';
 import '../offline/offline_pack.dart';
 import '../sources/source.dart';
 import '../ui/strings.dart';
+import 'live_notification.dart';
 import 'merge.dart';
 import 'search.dart';
 import 'store.dart';
@@ -17,9 +18,8 @@ enum RefreshOutcome { updated, notFound, offline }
 class TripRefreshResult {
   final RefreshOutcome outcome;
   final List<String> changes;
-  final List<Journey> alternatives;
   final String? error;
-  const TripRefreshResult(this.outcome, {this.changes = const [], this.alternatives = const [], this.error});
+  const TripRefreshResult(this.outcome, {this.changes = const [], this.error});
 }
 
 /// Human-readable differences between two versions of the same journey.
@@ -70,8 +70,18 @@ class TripUpdater extends ChangeNotifier with WidgetsBindingObserver {
 
   TripUpdater(this.store);
 
+  bool _foreground = true;
+  String _tripIds = '';
+
   void start() {
     WidgetsBinding.instance.addObserver(this);
+    // A trip saved or deleted: show/remove the live notification right away, not on the next tick.
+    store.addListener(() {
+      final ids = store.trips.map((t) => t.id).join(',');
+      if (ids == _tripIds) return;
+      _tripIds = ids;
+      LiveNotifier.instance.update(store);
+    });
     _schedule();
     refreshActive();
     _checkOffline();
@@ -95,11 +105,14 @@ class TripUpdater extends ChangeNotifier with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _foreground = true;
       _schedule();
       refreshActive(); // coming back to the app: get fresh data right away
       _checkOffline();
     } else if (state == AppLifecycleState.paused) {
-      _timer?.cancel();
+      _foreground = false;
+      // While the live notification runs (Android foreground service) the app stays alive: keep refreshing.
+      if (!LiveNotifier.instance.keepsAlive) _timer?.cancel();
     }
   }
 
@@ -111,6 +124,7 @@ class TripUpdater extends ChangeNotifier with WidgetsBindingObserver {
       final notOver = t.journey.arrival.isAfter(now.subtract(const Duration(minutes: 30)));
       if (soon && notOver) await refresh(t.id);
     }
+    await LiveNotifier.instance.update(store);
   }
 
   final _inFlight = <String, Future<TripRefreshResult>>{};
@@ -141,9 +155,14 @@ class TripUpdater extends ChangeNotifier with WidgetsBindingObserver {
     try {
       final s = S(store.settings.language);
       final st = store.settings;
+      // Switched to an alternative on the way: only the new part is looked up, from where it starts.
+      final cut = (trip.switchedAt ?? 0).clamp(0, trip.journey.legs.length - 1);
+      final head = trip.journey.legs.sublist(0, cut);
+      final tail = Journey(source: trip.journey.source, dticket: trip.journey.dticket, legs: trip.journey.legs.sublist(cut));
+      final from = cut == 0 ? trip.route.from : tail.legs.first.from;
       // Search without the user's filters so the saved connection is found whenever it still runs.
       final opts = SearchOptions(
-        when: trip.journey.plannedDeparture.subtract(const Duration(minutes: 1)),
+        when: tail.plannedDeparture.subtract(const Duration(minutes: 1)),
         bahncard: st.bahncard,
         firstClass: st.firstClass,
         dticket: st.dticket,
@@ -155,21 +174,30 @@ class TripUpdater extends ChangeNotifier with WidgetsBindingObserver {
         includeWalking: false,
       );
       SearchResult? last;
-      await for (final r in searchJourneys(trip.route.from, trip.route.to, opts, st.sources)) {
+      await for (final r in searchJourneys(from, trip.route.to, opts, st.sources)) {
         last = r;
       }
       if (last == null || !last.status.values.any((x) => x.state == SourceState.ok)) {
         final err = last?.status.values.map((x) => x.error).whereType<String>().firstOrNull;
         return TripRefreshResult(RefreshOutcome.offline, error: err);
       }
-      final found = last.journeys.where((j) => sameJourney(j, trip.journey)).firstOrNull;
-      if (found == null) {
-        final alts = last.journeys.where((j) => j.departure.isAfter(DateTime.now()) && !j.cancelled).take(3).toList();
-        return TripRefreshResult(RefreshOutcome.notFound, alternatives: alts);
-      }
+      final match = last.journeys.where((j) => sameJourney(j, tail)).firstOrNull;
+      // Gone: the trip screen looks for alternatives from where you are.
+      if (match == null) return const TripRefreshResult(RefreshOutcome.notFound);
+      final changes = diffJourneys(tail, match, s);
+      final found = cut == 0
+          ? match
+          : Journey(
+              source: match.source,
+              sources: {...trip.journey.sources, ...match.sources}.toList(),
+              legs: [...head, ...match.legs],
+              prices: trip.journey.prices,
+              dticket: match.dticket,
+              soldOut: match.soldOut,
+              bookingUrls: match.bookingUrls,
+            );
       // Keep the id stable even if a source reports slightly different planned times.
       found.id = trip.id;
-      final changes = diffJourneys(trip.journey, found, s);
       final stamp = '${_hhmm(DateTime.now())} ';
       store.updateTrip(
         trip.copyWith(
@@ -182,6 +210,8 @@ class TripUpdater extends ChangeNotifier with WidgetsBindingObserver {
         for (final l in [..._listeners]) {
           l(id, changes);
         }
+        // In the app the trip screen shows them; outside it, a notification.
+        if (!_foreground) LiveNotifier.instance.changed(trip, changes, s);
       }
       return TripRefreshResult(RefreshOutcome.updated, changes: changes);
     } catch (e) {

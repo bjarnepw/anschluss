@@ -1,6 +1,8 @@
+import 'package:anschluss/core/net.dart';
 import 'package:anschluss/models/journey.dart';
 import 'package:anschluss/models/settings.dart';
 import 'package:anschluss/services/merge.dart';
+import 'package:anschluss/services/tricks.dart';
 import 'package:anschluss/services/via_search.dart';
 import 'package:anschluss/ui/line_colors.dart';
 import 'package:flutter/material.dart';
@@ -241,5 +243,75 @@ void main() {
       ],
     );
     expect(pruneImplausible([db, oebb], berlin, mannheim), [db]);
+  });
+
+  test('tricks: kept only when clearly cheaper than normal options about as fast', () {
+    Journey j(String line, int dep, int arr, double price, {Trick? trick}) => Journey(
+      source: trick == null ? 'db' : 'trick',
+      dticket: false,
+      legs: [leg(line, Mode.long, dep, arr)],
+      prices: [Price(amount: price, source: 'db')],
+      trick: trick,
+    );
+    final plain = [j('ICE 1', 0, 120, 60), j('RE 5', 0, 240, 30)];
+    final cheapSplit = j('ICE 1', 0, 120, 45, trick: const Trick('split', 'Hannover Hbf'));
+    final notCheaper = j('ICE 1', 0, 120, 59, trick: const Trick('split', 'Hannover Hbf'));
+    final kept = usefulTricks([cheapSplit, notCheaper], plain, dticket: false);
+    expect(kept, hasLength(1));
+    expect(kept.single.trick!.saves, 15); // vs. the 60 € ICE, the 30 € RE arrives two hours later
+
+    // Not merged into the normal ICE entry with the same train.
+    final merged = mergeJourneys([plain, kept]);
+    expect(merged, hasLength(3));
+    expect(merged.where((m) => m.trick != null).single.bestPrice!.amount, 45);
+  });
+
+  test('split ticket on the same train: one leg, no transfer', () {
+    final legs = seatedLegs([
+      leg('ICE 1', Mode.long, 0, 100, from: 'Berlin', to: 'Hannover'),
+      leg('ICE 1', Mode.long, 102, 220, from: 'Hannover', to: 'Köln'),
+      leg('S 12', Mode.suburban, 230, 250, from: 'Köln', to: 'Bonn'),
+    ]);
+    expect(legs.map((l) => '${l.line} ${l.from.name}-${l.to.name}'), ['ICE 1 Berlin-Köln', 'S 12 Köln-Bonn']);
+    expect(legs.first.stops.single.name, 'Hannover');
+    expect(legs.first.minutes, 220);
+  });
+
+  test('trick hubs: on the way, not at either end', () {
+    Leg ice(int dep, int arr) => Leg(
+      mode: Mode.long,
+      line: 'ICE 1',
+      from: const Place(name: 'Berlin', lat: 52.52, lon: 13.37),
+      to: const Place(name: 'Köln', lat: 50.94, lon: 6.96),
+      dep: DateTime.utc(2026, 9, 29, 8),
+      arr: DateTime.utc(2026, 9, 29, 12, 30),
+      stops: const [
+        Stopover(name: 'Spandau', lat: 52.53, lon: 13.20), // too close to the start
+        Stopover(name: 'Hannover Hbf', lat: 52.38, lon: 9.74),
+        Stopover(name: 'München Hbf', lat: 48.14, lon: 11.56), // far off the way
+      ],
+    );
+    final hubs = trickHubs(
+      const Place(name: 'Berlin', lat: 52.52, lon: 13.37),
+      const Place(name: 'Köln', lat: 50.94, lon: 6.96),
+      [Journey(source: 'db', dticket: false, legs: [ice(0, 270)])],
+    );
+    expect(hubs.map((h) => h.place.name), ['Hannover Hbf']);
+    expect(hubs.single.onLongLeg, isTrue);
+  });
+
+  test('cache: one request for two calls at once, failures not kept', () async {
+    final c = TtlCache();
+    var calls = 0;
+    Future<int> slow() async {
+      calls++;
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      return 7;
+    }
+
+    expect(await Future.wait([c.get('k', const Duration(minutes: 1), slow), c.get('k', const Duration(minutes: 1), slow)]), [7, 7]);
+    expect(calls, 1);
+    await expectLater(c.get<int>('e', const Duration(minutes: 1), () async => throw Exception('down')), throwsException);
+    expect(await c.get('e', const Duration(minutes: 1), () async => 1), 1);
   });
 }

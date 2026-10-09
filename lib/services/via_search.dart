@@ -38,7 +38,13 @@ Journey joinJourneys(Journey a, Journey b) {
       if (pa != null && pb != null)
         Price(amount: ((pa.amount + pb.amount) * 100).round() / 100, source: pa.source, partial: true, url: pa.url)
       else if (pa != null || pb != null)
-        Price(amount: (pa ?? pb)!.amount, source: (pa ?? pb)!.source, partial: true, url: (pa ?? pb)!.url),
+        Price(
+          amount: (pa ?? pb)!.amount,
+          source: (pa ?? pb)!.source,
+          partial: true,
+          url: (pa ?? pb)!.url,
+          covers: (pa != null ? a : b).transit.map((l) => l.line).join(', '),
+        ),
     ],
     dticket: a.dticket && b.dticket,
     soldOut: a.soldOut || b.soldOut,

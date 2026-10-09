@@ -1,4 +1,5 @@
 // UI strings in German and English. Kept in one small table instead of ARB code generation.
+import '../models/journey.dart';
 import '../models/settings.dart';
 
 class S {
@@ -39,6 +40,9 @@ class S {
   String get direct => _('Direkt', 'Direct');
   String changes(int n) => de ? '$n× Umstieg' : '$n change${n == 1 ? '' : 's'}';
   String get noPrice => _('kein Preis', 'no price');
+  String get partPrice => _('Teilpreis', 'part price');
+  String onlyFor(String trains) => _('nur $trains', 'only $trains');
+  String paidRestDticket(String trains) => _('$trains · Rest D-Ticket', '$trains · rest D-Ticket');
   String get withDticket => _('mit Deutschlandticket', 'with Deutschlandticket');
   String offers(int n) => de ? '$n Angebote' : '$n offers';
   String get fastest => _('Schnellste', 'Fastest');
@@ -53,14 +57,27 @@ class S {
   String walkMin(int m, double? dist) => de
       ? 'Fußweg $m min${dist != null && dist > 0 ? ', ${dist.round()} m' : ''}'
       : 'Walk $m min${dist != null && dist > 0 ? ', ${dist.round()} m' : ''}';
-  String transferAt(String st, int m) => de ? 'Umstieg in $st · $m min' : 'Change at $st · $m min';
+  String transfer(int m, int walk) => de
+      ? 'Umstieg $m min${walk > 0 ? ' · $walk min Fußweg' : ''}'
+      : 'Change $m min${walk > 0 ? ' · $walk min walk' : ''}';
   String towards(String d) => de ? 'Richtung $d' : 'towards $d';
   String platform(String p) => de ? 'Gl. $p' : 'Pl. $p';
-  String stopsBetween(int n) => de ? '$n Zwischenhalte' : '$n stops in between';
+  String stopsBetween(int n) => de ? '$n Zwischenhalt${n == 1 ? '' : 'e'}' : '$n stop${n == 1 ? '' : 's'} in between';
   String get onTime => _('pünktlich', 'on time');
   String get book => _('Buchen', 'Book');
   String get bookFlix => _('Bei Flix buchen', 'Book at Flix');
   String get openBahn => _('Auf bahn.de öffnen', 'Open on bahn.de');
+  String get openBahn2 => _('2. Ticket auf bahn.de', '2nd ticket on bahn.de');
+  String trick(Trick t, String Function(double) eur) {
+    final what = switch (t.kind) {
+      'split' => _('2 Tickets, geteilt in ${t.at}', 'Split ticket at ${t.at}'),
+      'dticket' => _('D-Ticket bis ${t.at}', 'D-Ticket to ${t.at}'),
+      'start' => _('Start: ${t.at}', 'Start at ${t.at}'),
+      _ => _('Ziel: ${t.at}', 'End at ${t.at}'),
+    };
+    final saves = t.saves;
+    return saves == null || saves <= 0 ? what : '$what · ${_('${eur(saves)} günstiger', '${eur(saves)} cheaper')}';
+  }
   String get oebbTickets => _('ÖBB-Tickets', 'ÖBB tickets');
   String get track => _('Verfolgen', 'Track');
   String get stopTracking => _('Nicht mehr verfolgen', 'Stop tracking');
@@ -71,6 +88,16 @@ class S {
     'Connection not found anymore – it may be cancelled. Look for alternatives?',
   );
   String get alternatives => _('Alternativen', 'Alternatives');
+  String vsPlan(int min) => min < -1
+      ? _('${-min} min früher als dein Plan', '${-min} min earlier than your plan')
+      : min > 1
+      ? _('$min min später als dein Plan', '$min min later than your plan')
+      : _('Ankunft wie dein Plan', 'Arrives like your plan');
+  String get takeThis => _('Diese nehmen', 'Take this');
+  String get switched => _('Reise auf die Alternative umgestellt', 'Trip switched to the alternative');
+  String switchedLog(String line, String time) => _('Umgestiegen auf $line ab $time', 'Switched to $line at $time');
+  String get undo => _('Rückgängig', 'Undo');
+  String cancelledAhead(String line) => _('$line fällt aus.', '$line is cancelled.');
   String get share => _('Teilen', 'Share');
   String get copied => _('In die Zwischenablage kopiert', 'Copied to clipboard');
   String get map => _('Karte', 'Map');
@@ -135,6 +162,7 @@ class S {
     'flix' => 'Flix',
     'oebb' => 'ÖBB',
     'flixcombo' => _('Flix-Kombi', 'Flix combos'),
+    'trick' => _('Tricks', 'Tricks'),
     'regiojet' => 'RegioJet',
     'offline' => 'Offline',
     'walk' => _('Zu Fuß', 'Walk'),
@@ -152,5 +180,7 @@ class S {
     _ => '',
   };
   String found(int n) => de ? '$n gefunden' : '$n found';
+  String sourcesSummary(int sources, int connections) =>
+      de ? '$sources Quellen · $connections Verbindungen' : '$sources sources · $connections connections';
   String get loading => _('lädt…', 'loading…');
 }

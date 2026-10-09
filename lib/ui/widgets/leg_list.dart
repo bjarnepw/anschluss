@@ -15,10 +15,17 @@ class LegList extends StatelessWidget {
     final minTransfer = context.store.settings.minTransferMinutes;
     final transfers = Map<Leg, Transfer>.identity()..addEntries(journey.transferList.map((t) => MapEntry(t.departing, t)));
     final children = <Widget>[];
-    for (final l in journey.legs) {
+    final legs = journey.legs;
+    for (var i = 0; i < legs.length; i++) {
+      final l = legs[i];
       final t = transfers[l];
       if (t != null) children.add(_TransferRow(t: t, minTransfer: minTransfer));
-      children.add(l.isWalk ? _WalkRow(leg: l) : _LegRow(leg: l));
+      if (!l.isWalk) {
+        children.add(_LegRow(leg: l));
+      } else if (!legs.take(i).any((x) => !x.isWalk) || !legs.skip(i + 1).any((x) => !x.isWalk)) {
+        // Only the walks at either end get a row; one between two trains is part of the change above.
+        children.add(_WalkRow(leg: l, start: i == 0, end: i == legs.length - 1));
+      }
     }
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children);
   }
@@ -38,16 +45,19 @@ class _TransferRow extends StatelessWidget {
     final platformChange = t.arriving.arrPlatform != null && t.departing.depPlatform != null
         ? ' · ${s.platform(t.arriving.arrPlatform!)} → ${s.platform(t.departing.depPlatform!)}'
         : '';
+    // The station is right above and below; name it only when the change means going to another one.
+    final otherStation = t.arriving.to.name != t.departing.from.name ? ' · ${t.station}' : '';
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          const SizedBox(width: 52),
-          Icon(bad ? Icons.warning_amber_rounded : Icons.transfer_within_a_station, size: 18, color: color),
-          const SizedBox(width: 8),
+          SizedBox(
+            width: 52,
+            child: Icon(bad ? Icons.warning_amber_rounded : Icons.transfer_within_a_station, size: 18, color: color),
+          ),
           Expanded(
             child: Text(
-              '${s.transferAt(t.departing.from.name, t.minutes)}$platformChange${bad ? ' – ${s.missedTransfer}' : ''}',
+              '${s.transfer(t.minutes, t.walkMinutes)}$otherStation$platformChange${bad ? ' – ${s.missedTransfer}' : ''}',
               style: TextStyle(color: color, fontWeight: bad || tight ? FontWeight.w700 : FontWeight.w500, fontSize: 13),
             ),
           ),
@@ -57,75 +67,56 @@ class _TransferRow extends StatelessWidget {
   }
 }
 
+/// Walk at the start or end of the trip, drawn on the same rail as the trains (dotted instead of solid).
 class _WalkRow extends StatelessWidget {
   final Leg leg;
-  const _WalkRow({required this.leg});
+  final bool start, end;
+  const _WalkRow({required this.leg, required this.start, required this.end});
 
   @override
   Widget build(BuildContext context) {
     if (leg.minutes <= 0 && (leg.walkDistance ?? 0) <= 0) return const SizedBox.shrink();
     final t = Theme.of(context).textTheme;
-    final cs = Theme.of(context).colorScheme;
     final c = lineColor(leg, Theme.of(context).brightness);
-    final sameStation = leg.from.name == leg.to.name;
-    // Walking is a real part of the trip: times, where from/to, and a dotted "rail" in the walk colour.
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(
-              width: 52,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(fmtTime(leg.dep), style: t.labelMedium?.copyWith(color: cs.onSurfaceVariant)),
-                  Text(fmtTime(leg.arr), style: t.labelMedium?.copyWith(color: cs.onSurfaceVariant)),
-                ],
-              ),
-            ),
-            Container(
-              width: 4,
-              margin: const EdgeInsets.only(right: 12),
-              child: CustomPaint(painter: _DotsPainter(c)),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(color: c.withValues(alpha: 0.15), shape: BoxShape.circle),
-                      child: Icon(Icons.directions_walk, size: 18, color: c),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            context.s.walkMin(leg.minutes, leg.walkDistance),
-                            style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          if (!sameStation && leg.to.name.isNotEmpty)
-                            Text(
-                              '→ ${leg.to.name}',
-                              style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
+    Widget point(DateTime time, String name) => Row(
+      children: [
+        SizedBox(width: 52, child: Text(fmtTime(time), style: t.titleSmall?.copyWith(fontWeight: FontWeight.w700))),
+        Expanded(
+          child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
         ),
+      ],
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (start) point(leg.dep, leg.from.name),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  width: 52,
+                  child: Center(child: SizedBox(width: 6, child: CustomPaint(painter: _DotsPainter(c)))),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      children: [
+                        Icon(Icons.directions_walk, size: 18, color: c),
+                        const SizedBox(width: 6),
+                        Text(context.s.walkMin(leg.minutes, leg.walkDistance), style: t.bodyMedium),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (end) point(leg.arr, leg.to.name),
+        ],
       ),
     );
   }
@@ -158,7 +149,8 @@ class _LegRow extends StatelessWidget {
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     final c = lineColor(l, Theme.of(context).brightness);
-    final fam = familyOf(l);
+    // "RE30 (33577)": the line in the badge, the train number quietly next to it.
+    final m = RegExp(r'^(.+?)\s*\((.+)\)$').firstMatch(l.line);
 
     Widget stationLine(DateTime time, int? delay, String name, String? platform) => Row(
       children: [
@@ -219,18 +211,20 @@ class _LegRow extends StatelessWidget {
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                               decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(6)),
                               child: Text(
-                                l.line,
+                                m?.group(1) ?? l.line,
                                 style: TextStyle(color: onLineColor(c), fontWeight: FontWeight.w800, fontSize: 13),
                               ),
                             ),
+                            if (m != null) Text(m.group(2)!, style: t.bodySmall?.copyWith(color: cs.outline)),
                             if (l.direction.isNotEmpty) Text(s.towards(l.direction), style: t.bodySmall),
                           ],
                         ),
-                        if (l.operator.isNotEmpty || fam.key != 'other')
+                        // The badge already says RE/ICE/…; the family label only helps when there is no operator.
+                        if (l.operator.isNotEmpty || familyOf(l).key != 'other')
                           Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: Text(
-                              [fam.label, if (l.operator.isNotEmpty) l.operator].join(' · '),
+                              l.operator.isNotEmpty ? l.operator : familyOf(l).label,
                               style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                             ),
                           ),

@@ -204,6 +204,9 @@ class Price {
   final double? originalAmount;
   final String? originalCurrency;
 
+  /// For a partial price: which trains it pays for (e.g. "FLX 1234"), when known.
+  final String? covers;
+
   const Price({
     required this.amount,
     this.currency = 'EUR',
@@ -213,6 +216,7 @@ class Price {
     this.seats,
     this.originalAmount,
     this.originalCurrency,
+    this.covers,
   });
 
   bool get converted => originalCurrency != null && originalCurrency != 'EUR';
@@ -226,6 +230,7 @@ class Price {
     'seats': seats,
     'originalAmount': originalAmount,
     'originalCurrency': originalCurrency,
+    if (covers != null) 'covers': covers,
   };
 
   factory Price.fromJson(Map<String, dynamic> j) => Price(
@@ -237,6 +242,7 @@ class Price {
     seats: j['seats'] as int?,
     originalAmount: (j['originalAmount'] as num?)?.toDouble(),
     originalCurrency: j['originalCurrency'] as String?,
+    covers: j['covers'] as String?,
   );
 }
 
@@ -260,6 +266,27 @@ class Transfer {
   int get buffer => minutes - walkMinutes;
 }
 
+/// Why a route found by the trick search (lib/services/tricks.dart) is worth a look.
+class Trick {
+  /// split: two tickets, cut at [at]; dticket: regional trains (D-Ticket) to [at], pay only from there;
+  /// start/end: begins/ends at the station [at] instead of the nearest stop.
+  final String kind;
+  final String at;
+
+  /// Euros saved compared with the cheapest normal connection that is about as fast.
+  final double? saves;
+
+  const Trick(this.kind, this.at, {this.saves});
+
+  /// Split and D-Ticket routes often ride the same trains as a normal result – keep them as their own entry.
+  bool get separate => kind == 'split' || kind == 'dticket';
+
+  Map<String, dynamic> toJson() => {'kind': kind, 'at': at, if (saves != null) 'saves': saves};
+
+  factory Trick.fromJson(Map<String, dynamic> j) =>
+      Trick(j['kind'] as String? ?? '', j['at'] as String? ?? '', saves: (j['saves'] as num?)?.toDouble());
+}
+
 class Journey {
   final String source;
   final List<String> sources;
@@ -268,6 +295,7 @@ class Journey {
   final bool dticket;
   final bool soldOut;
   final Map<String, String> bookingUrls;
+  final Trick? trick;
 
   // Filled by ranking
   String id = '';
@@ -283,6 +311,7 @@ class Journey {
     required this.dticket,
     this.soldOut = false,
     Map<String, String>? bookingUrls,
+    this.trick,
   }) : sources = sources ?? [source],
        prices = prices ?? [],
        bookingUrls = bookingUrls ?? {} {
@@ -355,6 +384,7 @@ class Journey {
     'dticket': dticket,
     'soldOut': soldOut,
     'bookingUrls': bookingUrls,
+    if (trick != null) 'trick': trick!.toJson(),
   };
 
   factory Journey.fromJson(Map<String, dynamic> j) => Journey(
@@ -365,6 +395,7 @@ class Journey {
     dticket: j['dticket'] == true,
     soldOut: j['soldOut'] == true,
     bookingUrls: ((j['bookingUrls'] as Map?) ?? {}).cast<String, String>(),
+    trick: j['trick'] is Map ? Trick.fromJson((j['trick'] as Map).cast<String, dynamic>()) : null,
   );
 }
 

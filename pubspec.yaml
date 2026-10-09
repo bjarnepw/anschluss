@@ -1,7 +1,7 @@
 name: anschluss
 description: "Every train in Germany in one search: DB, FlixTrain, ÖBB and all regional operators, with prices and maps."
 publish_to: 'none'
-version: 0.6.3+10
+version: 0.7.0+11
 
 environment:
   sdk: ^3.13.0
@@ -11,6 +11,7 @@ dependencies:
   dynamic_color: ^1.9.0 # 2.x is built on the standalone material_ui package, incompatible with flutter/material
   flutter:
     sdk: flutter
+  flutter_local_notifications: ^22.3.1
   flutter_map: ^8.3.2
   geolocator: ^14.1.1
   http: ^1.6.0

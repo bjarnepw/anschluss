@@ -2,16 +2,24 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 
 import 'offline/offline_pack.dart';
+import 'services/live_notification.dart';
 import 'services/store.dart';
 import 'services/trip_updates.dart';
 import 'ui/app_scope.dart';
 import 'ui/screens/shell.dart';
+import 'ui/screens/tracking.dart';
+
+final _navigator = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final store = AppStore();
   await store.load();
   await OfflinePack.instance.init();
+  await LiveNotifier.instance.init();
+  LiveNotifier.instance.onTap = (id) {
+    if (store.tripById(id) != null) _navigator.currentState?.push(MaterialPageRoute(builder: (_) => TripScreen(tripId: id)));
+  };
   TripUpdater.instance = TripUpdater(store)..start();
   runApp(AnschlussApp(store: store));
 }
@@ -70,6 +78,7 @@ class AnschlussApp extends StatelessWidget {
             if (st.amoled) dark = amoled(dark);
             return MaterialApp(
               title: 'Anschluss',
+              navigatorKey: _navigator,
               debugShowCheckedModeBanner: false,
               theme: theme(light),
               darkTheme: theme(dark),
